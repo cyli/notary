@@ -205,14 +205,40 @@ func parseKeyParams(ctx context.Context, vars map[string]string) (*serverKeyInfo
 }
 
 func rotateKeyHandler(ctx context.Context, w io.Writer, vars map[string]string) error {
-	return getKeyHandler(ctx, w, vars)
-}
-
-func getKeyHandler(ctx context.Context, w io.Writer, vars map[string]string) error {
 	s, err := parseKeyParams(ctx, vars)
 	if err != nil {
 		return err
 	}
+
+	root, err := store.GetCurrent(gun, data.CanonicalRootRole)
+	if _, ok := err.(storage.ErrNotFound); ok {
+		return tempGetKey(s, w)
+	} else if err != nil {
+		return errors.ErrUnknown.WithArgs(err)
+	}
+
+	r := &data.SignedRoot{}
+	if err := json.Unmarshal(root, r); err != nil {
+		return errors.ErrUnknown.WithDetail(err)
+	}
+
+	key, err := tempGetKey(s)
+	if err != nil {
+		return err
+	}
+
+	out, err := json.Marshal(key)
+	if err != nil {
+		return errors.ErrUnknown.WithDetail(err)
+	}
+	w.Write(out)
+	return nil
+}
+
+// temporary refactoring out of code to be shared between rotateKeyHandler and
+// getKeyHandler.  Should be eliminated when real server key rotation functionality
+// goes in.
+func tempGetKey(s *serverKeyInfo, w io.Writer) error {
 	var key data.PublicKey
 
 	switch s.role { // parseKeyParams ensures it's only timestamp or snapshot
@@ -233,6 +259,15 @@ func getKeyHandler(ctx context.Context, w io.Writer, vars map[string]string) err
 	}
 	w.Write(out)
 	return nil
+}
+
+func getKeyHandler(ctx context.Context, w io.Writer, vars map[string]string) error {
+	s, err := parseKeyParams(ctx, vars)
+	if err != nil {
+		return err
+	}
+
+	return tempGetKey(s, w)
 }
 
 // NotFoundHandler is used as a generic catch all handler to return the ErrMetadataNotFound

@@ -19,7 +19,7 @@ func TestTimestampExpired(t *testing.T) {
 	ts := &data.SignedTimestamp{
 		Signatures: nil,
 		Signed: data.Timestamp{
-			Expires: time.Now().AddDate(-1, 0, 0),
+			SignedCommon: data.SignedCommon{Expires: time.Now().AddDate(-1, 0, 0)},
 		},
 	}
 	require.True(t, timestampExpired(ts), "Timestamp should have expired")
@@ -29,7 +29,7 @@ func TestTimestampNotExpired(t *testing.T) {
 	ts := &data.SignedTimestamp{
 		Signatures: nil,
 		Signed: data.Timestamp{
-			Expires: time.Now().AddDate(1, 0, 0),
+			SignedCommon: data.SignedCommon{Expires: time.Now().AddDate(1, 0, 0)},
 		},
 	}
 	require.False(t, timestampExpired(ts), "Timestamp should NOT have expired")

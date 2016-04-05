@@ -2,10 +2,11 @@ package handlers
 
 import (
 	"bytes"
-	"encoding/json"
-	"reflect"
+	"path"
 	"testing"
 	"time"
+
+	"github.com/docker/go/canonical/json"
 
 	"github.com/docker/notary/cryptoservice"
 	"github.com/docker/notary/passphrase"
@@ -102,6 +103,7 @@ func TestValidateEmptyNew(t *testing.T) {
 	updates := []storage.MetaUpdate{root, targets, snapshot, timestamp}
 
 	serverCrypto := copyKeys(t, cs, data.CanonicalTimestampRole)
+
 	updates, err = validateUpdate(serverCrypto, "testGUN", updates, store)
 	require.NoError(t, err)
 
@@ -331,7 +333,7 @@ func TestValidateOldRootCorruptRootRole(t *testing.T) {
 	serverCrypto := copyKeys(t, cs, data.CanonicalTimestampRole)
 	_, err = validateUpdate(serverCrypto, "testGUN", updates, store)
 	require.Error(t, err)
-	require.IsType(t, data.ErrInvalidRole{}, err)
+	require.IsType(t, data.ErrInvalidMetadata{}, err)
 }
 
 // We cannot validate a new root if we cannot get the old root from the DB (
@@ -731,7 +733,7 @@ func TestValidateRootInvalidTimestampThreshold(t *testing.T) {
 	serverCrypto := copyKeys(t, cs, data.CanonicalTimestampRole)
 	_, err = validateUpdate(serverCrypto, "testGUN", updates, store)
 	require.Error(t, err)
-	require.Contains(t, err.Error(), "timestamp role has invalid threshold")
+	require.IsType(t, validation.ErrValidation{}, err)
 }
 
 // If any role has a threshold < 1, validation fails
@@ -1064,14 +1066,14 @@ func TestValidateTargetsModifiedHash(t *testing.T) {
 
 // ### generateSnapshot tests ###
 func TestGenerateSnapshotRootNotLoaded(t *testing.T) {
-	repo := tuf.NewRepo(nil)
-	_, err := generateSnapshot("gun", repo, storage.NewMemStorage())
+	builder := tuf.NewRepoBuilder(nil, "gun", nil)
+	_, err := generateSnapshot("gun", builder, storage.NewMemStorage())
 	require.Error(t, err)
 	require.IsType(t, validation.ErrValidation{}, err)
 }
 
 func TestGenerateSnapshotNoKey(t *testing.T) {
-	repo, cs, err := testutils.EmptyRepo("docker.com/notary")
+	metadata, cs, err := testutils.NewRepoMetadata("docker.com/notary")
 	require.NoError(t, err)
 	store := storage.NewMemStorage()
 
@@ -1080,7 +1082,12 @@ func TestGenerateSnapshotNoKey(t *testing.T) {
 		require.NoError(t, cs.RemoveKey(keyID))
 	}
 
-	_, err = generateSnapshot("gun", repo, store)
+	builder := tuf.NewRepoBuilder(nil, "gun", cs)
+	// only load root and targets
+	require.NoError(t, builder.Load(data.CanonicalRootRole, metadata[data.CanonicalRootRole], 0))
+	require.NoError(t, builder.Load(data.CanonicalTargetsRole, metadata[data.CanonicalTargetsRole], 0))
+
+	_, err = generateSnapshot("gun", builder, store)
 	require.Error(t, err)
 	require.IsType(t, validation.ErrBadHierarchy{}, err)
 }
@@ -1088,251 +1095,180 @@ func TestGenerateSnapshotNoKey(t *testing.T) {
 // ### End generateSnapshot tests ###
 
 // ### Target validation with delegations tests
-func TestLoadTargetsFromStore(t *testing.T) {
-	repo, _, err := testutils.EmptyRepo("docker.com/notary")
+func TestLoadTargetsLoadsNothingIfNoUpdates(t *testing.T) {
+	gun := "docker.com/notary"
+	metadata, _, err := testutils.NewRepoMetadata(gun)
 	require.NoError(t, err)
+
+	// load the root into the builder, else we can't load anything else
+	builder := tuf.NewRepoBuilder(nil, gun, nil)
+	require.NoError(t, builder.Load(data.CanonicalRootRole, metadata[data.CanonicalRootRole], 0))
+
 	store := storage.NewMemStorage()
-
-	st, err := repo.SignTargets(
-		data.CanonicalTargetsRole,
-		data.DefaultExpires(data.CanonicalTargetsRole),
-	)
-	require.NoError(t, err)
-
-	tgs, err := json.Marshal(st)
-	require.NoError(t, err)
-	update := storage.MetaUpdate{
+	store.UpdateCurrent(gun, storage.MetaUpdate{
 		Role:    data.CanonicalTargetsRole,
 		Version: 1,
-		Data:    tgs,
-	}
-	store.UpdateCurrent("gun", update)
+		Data:    metadata[data.CanonicalTargetsRole],
+	})
 
-	generated := repo.Targets[data.CanonicalTargetsRole]
-	delete(repo.Targets, data.CanonicalTargetsRole)
-	_, ok := repo.Targets[data.CanonicalTargetsRole]
-	require.False(t, ok)
-
-	err = loadTargetsFromStore("gun", data.CanonicalTargetsRole, repo, store)
+	// if no updates, nothing is loaded
+	targetsToUpdate, err := loadAndValidateTargets(gun, builder, nil, store)
+	require.Empty(t, targetsToUpdate)
 	require.NoError(t, err)
-	loaded, ok := repo.Targets[data.CanonicalTargetsRole]
-	require.True(t, ok)
-	require.True(t, reflect.DeepEqual(generated.Signatures, loaded.Signatures))
-	require.Len(t, loaded.Signed.Targets, 0)
-	require.Equal(t, len(generated.Signed.Targets), len(loaded.Signed.Targets))
-	require.Len(t, loaded.Signed.Delegations.Roles, 0)
-	require.Equal(t, len(generated.Signed.Delegations.Roles), len(loaded.Signed.Delegations.Roles))
-	require.Len(t, loaded.Signed.Delegations.Keys, 0)
-	require.Equal(t, len(generated.Signed.Delegations.Keys), len(loaded.Signed.Delegations.Keys))
-	require.True(t, generated.Signed.Expires.Equal(loaded.Signed.Expires))
-	require.Equal(t, generated.Signed.Type, loaded.Signed.Type)
-	require.Equal(t, generated.Signed.Version, loaded.Signed.Version)
+	require.False(t, builder.IsLoaded(data.CanonicalTargetsRole))
 }
 
-func TestValidateTargetsLoadParent(t *testing.T) {
-	baseRepo, cs, err := testutils.EmptyRepo("docker.com/notary")
-	require.NoError(t, err)
-	store := storage.NewMemStorage()
-
-	k, err := cs.Create("targets/level1", "docker.com/notary", data.ED25519Key)
-	require.NoError(t, err)
-
-	err = baseRepo.UpdateDelegationKeys("targets/level1", []data.PublicKey{k}, []string{}, 1)
-	require.NoError(t, err)
-	err = baseRepo.UpdateDelegationPaths("targets/level1", []string{""}, []string{}, false)
+// When a delegation role appears in the update and the parent does not, the
+// parent is loaded from the DB if it can
+func TestValidateTargetsRequiresStoredParent(t *testing.T) {
+	delgName := "targets/level1"
+	metadata, _, err := testutils.NewRepoMetadata("docker.com/notary",
+		delgName, path.Join(delgName, "other"))
 	require.NoError(t, err)
 
-	// no targets file is created for the new delegations, so force one
-	baseRepo.InitTargets("targets/level1")
-
-	// we're not going to validate things loaded from storage, so no need
-	// to sign the base targets, just Marshal it and set it into storage
-	tgtsJSON, err := json.Marshal(baseRepo.Targets["targets"])
-	require.NoError(t, err)
-	update := storage.MetaUpdate{
-		Role:    data.CanonicalTargetsRole,
-		Version: 1,
-		Data:    tgtsJSON,
-	}
-	store.UpdateCurrent("gun", update)
-
-	// generate the update object we're doing to use to call loadAndValidateTargets
-	del, err := baseRepo.SignTargets("targets/level1", data.DefaultExpires(data.CanonicalTargetsRole))
-	require.NoError(t, err)
-	delJSON, err := json.Marshal(del)
-	require.NoError(t, err)
+	// load the root into the builder, else we can't load anything else
+	builder := tuf.NewRepoBuilder(nil, "gun", nil)
+	require.NoError(t, builder.Load(data.CanonicalRootRole, metadata[data.CanonicalRootRole], 0))
 
 	delUpdate := storage.MetaUpdate{
-		Role:    "targets/level1",
+		Role:    delgName,
 		Version: 1,
-		Data:    delJSON,
+		Data:    metadata[delgName],
 	}
 
-	roles := map[string]storage.MetaUpdate{"targets/level1": delUpdate}
+	upload := map[string]storage.MetaUpdate{delgName: delUpdate}
 
-	valRepo := tuf.NewRepo(nil)
-	valRepo.SetRoot(baseRepo.Root)
-
-	updates, err := loadAndValidateTargets("gun", valRepo, roles, store)
-	require.NoError(t, err)
-	require.Len(t, updates, 1)
-	require.Equal(t, "targets/level1", updates[0].Role)
-	require.Equal(t, delJSON, updates[0].Data)
-}
-
-func TestValidateTargetsParentInUpdate(t *testing.T) {
-	baseRepo, cs, err := testutils.EmptyRepo("docker.com/notary")
-	require.NoError(t, err)
 	store := storage.NewMemStorage()
 
-	k, err := cs.Create("targets/level1", "docker.com/notary", data.ED25519Key)
-	require.NoError(t, err)
-
-	err = baseRepo.UpdateDelegationKeys("targets/level1", []data.PublicKey{k}, []string{}, 1)
-	require.NoError(t, err)
-	err = baseRepo.UpdateDelegationPaths("targets/level1", []string{""}, []string{}, false)
-	require.NoError(t, err)
-
-	// no targets file is created for the new delegations, so force one
-	baseRepo.InitTargets("targets/level1")
-
-	targets, err := baseRepo.SignTargets("targets", data.DefaultExpires(data.CanonicalTargetsRole))
-
-	tgtsJSON, err := json.Marshal(targets)
-	require.NoError(t, err)
-	update := storage.MetaUpdate{
-		Role:    data.CanonicalTargetsRole,
-		Version: 1,
-		Data:    tgtsJSON,
-	}
-	store.UpdateCurrent("gun", update)
-
-	del, err := baseRepo.SignTargets("targets/level1", data.DefaultExpires(data.CanonicalTargetsRole))
-	require.NoError(t, err)
-	delJSON, err := json.Marshal(del)
-	require.NoError(t, err)
-
-	delUpdate := storage.MetaUpdate{
-		Role:    "targets/level1",
-		Version: 1,
-		Data:    delJSON,
-	}
-
-	roles := map[string]storage.MetaUpdate{
-		"targets/level1": delUpdate,
-		"targets":        update,
-	}
-
-	valRepo := tuf.NewRepo(nil)
-	valRepo.SetRoot(baseRepo.Root)
-
-	// because we sort the roles, the list of returned updates
-	// will contain shallower roles first, in this case "targets",
-	// and then "targets/level1"
-	updates, err := loadAndValidateTargets("gun", valRepo, roles, store)
-	require.NoError(t, err)
-	require.Len(t, updates, 2)
-	require.Equal(t, "targets", updates[0].Role)
-	require.Equal(t, tgtsJSON, updates[0].Data)
-	require.Equal(t, "targets/level1", updates[1].Role)
-	require.Equal(t, delJSON, updates[1].Data)
-}
-
-func TestValidateTargetsParentNotFound(t *testing.T) {
-	baseRepo, cs, err := testutils.EmptyRepo("docker.com/notary")
-	require.NoError(t, err)
-	store := storage.NewMemStorage()
-
-	k, err := cs.Create("targets/level1", "docker.com/notary", data.ED25519Key)
-	require.NoError(t, err)
-
-	err = baseRepo.UpdateDelegationKeys("targets/level1", []data.PublicKey{k}, []string{}, 1)
-	require.NoError(t, err)
-	err = baseRepo.UpdateDelegationPaths("targets/level1", []string{""}, []string{}, false)
-	require.NoError(t, err)
-
-	// no targets file is created for the new delegations, so force one
-	baseRepo.InitTargets("targets/level1")
-
-	// generate the update object we're doing to use to call loadAndValidateTargets
-	del, err := baseRepo.SignTargets("targets/level1", data.DefaultExpires(data.CanonicalTargetsRole))
-	require.NoError(t, err)
-	delJSON, err := json.Marshal(del)
-	require.NoError(t, err)
-
-	delUpdate := storage.MetaUpdate{
-		Role:    "targets/level1",
-		Version: 1,
-		Data:    delJSON,
-	}
-
-	roles := map[string]storage.MetaUpdate{"targets/level1": delUpdate}
-
-	valRepo := tuf.NewRepo(nil)
-	valRepo.SetRoot(baseRepo.Root)
-
-	_, err = loadAndValidateTargets("gun", valRepo, roles, store)
+	// if the DB has no "targets" role
+	_, err = loadAndValidateTargets("gun", builder, upload, store)
 	require.Error(t, err)
-	require.IsType(t, storage.ErrNotFound{}, err)
+	require.IsType(t, validation.ErrBadTargets{}, err)
+
+	// ensure the "targets" (the parent) is in the "db"
+	store.UpdateCurrent("gun", storage.MetaUpdate{
+		Role:    data.CanonicalTargetsRole,
+		Version: 1,
+		Data:    metadata[data.CanonicalTargetsRole],
+	})
+
+	updates, err := loadAndValidateTargets("gun", builder, upload, store)
+	require.NoError(t, err)
+	require.Len(t, updates, 1)
+	require.Equal(t, delgName, updates[0].Role)
+	require.Equal(t, metadata[delgName], updates[0].Data)
 }
 
-func TestValidateTargetsRoleNotInParent(t *testing.T) {
-	baseRepo, cs, err := testutils.EmptyRepo("docker.com/notary")
+// If the parent is not in the store, then the parent must be in the update else
+// validation fails.
+func TestValidateTargetsParentInUpdate(t *testing.T) {
+	gun := "docker.com/notary"
+	delgName := "targets/level1"
+	metadata, _, err := testutils.NewRepoMetadata(gun, delgName, path.Join(delgName, "other"))
 	require.NoError(t, err)
 	store := storage.NewMemStorage()
 
-	level1Key, err := cs.Create("targets/level1", "docker.com/notary", data.ED25519Key)
-	require.NoError(t, err)
-	r, err := data.NewRole("targets/level1", 1, []string{level1Key.ID()}, []string{""})
+	// load the root into the builder, else we can't load anything else
+	builder := tuf.NewRepoBuilder(nil, gun, nil)
+	require.NoError(t, builder.Load(data.CanonicalRootRole, metadata[data.CanonicalRootRole], 0))
 
-	baseRepo.Targets[data.CanonicalTargetsRole].Signed.Delegations.Roles = []*data.Role{r}
-	baseRepo.Targets[data.CanonicalTargetsRole].Signed.Delegations.Keys = data.Keys{
-		level1Key.ID(): level1Key,
-	}
-
-	baseRepo.InitTargets("targets/level1")
-
-	del, err := baseRepo.SignTargets("targets/level1", data.DefaultExpires(data.CanonicalTargetsRole))
-	require.NoError(t, err)
-	delJSON, err := json.Marshal(del)
-	require.NoError(t, err)
-
-	delUpdate := storage.MetaUpdate{
-		Role:    "targets/level1",
-		Version: 1,
-		Data:    delJSON,
-	}
-
-	// set back to empty so stored targets doesn't have reference to level1
-	baseRepo.Targets[data.CanonicalTargetsRole].Signed.Delegations.Roles = nil
-	baseRepo.Targets[data.CanonicalTargetsRole].Signed.Delegations.Keys = nil
-	targets, err := baseRepo.SignTargets(data.CanonicalTargetsRole, data.DefaultExpires(data.CanonicalTargetsRole))
-
-	tgtsJSON, err := json.Marshal(targets)
-	require.NoError(t, err)
-	update := storage.MetaUpdate{
+	targetsUpdate := storage.MetaUpdate{
 		Role:    data.CanonicalTargetsRole,
 		Version: 1,
-		Data:    tgtsJSON,
-	}
-	store.UpdateCurrent("gun", update)
-
-	roles := map[string]storage.MetaUpdate{
-		"targets/level1":          delUpdate,
-		data.CanonicalTargetsRole: update,
+		Data:    []byte("Invalid metadata"),
 	}
 
-	valRepo := tuf.NewRepo(nil)
-	valRepo.SetRoot(baseRepo.Root)
+	delgUpdate := storage.MetaUpdate{
+		Role:    delgName,
+		Version: 1,
+		Data:    metadata[delgName],
+	}
+
+	upload := map[string]storage.MetaUpdate{
+		"targets/level1":          delgUpdate,
+		data.CanonicalTargetsRole: targetsUpdate,
+	}
+
+	// parent update not readable - fail
+	_, err = loadAndValidateTargets(gun, builder, upload, store)
+	require.Error(t, err)
+	require.IsType(t, validation.ErrBadTargets{}, err)
 
 	// because we sort the roles, the list of returned updates
 	// will contain shallower roles first, in this case "targets",
 	// and then "targets/level1"
-	updates, err := loadAndValidateTargets("gun", valRepo, roles, store)
+	targetsUpdate.Data = metadata[data.CanonicalTargetsRole]
+	upload[data.CanonicalTargetsRole] = targetsUpdate
+	updates, err := loadAndValidateTargets(gun, builder, upload, store)
 	require.NoError(t, err)
-	require.Len(t, updates, 1)
-	require.Equal(t, data.CanonicalTargetsRole, updates[0].Role)
-	require.Equal(t, tgtsJSON, updates[0].Data)
+	require.Equal(t, []storage.MetaUpdate{targetsUpdate, delgUpdate}, updates)
+}
+
+// If the parent, either from the DB or from an update, does not contain the role
+// of the delegation update, validation fails
+func TestValidateTargetsRoleNotInParent(t *testing.T) {
+	// no delegation at first
+	gun := "docker.com/notary"
+	repo, cs, err := testutils.EmptyRepo(gun)
+	require.NoError(t, err)
+
+	meta, err := testutils.SignAndSerialize(repo)
+	require.NoError(t, err)
+
+	// load the root into the builder, else we can't load anything else
+	builder := tuf.NewRepoBuilder(nil, gun, nil)
+	require.NoError(t, builder.Load(data.CanonicalRootRole, meta[data.CanonicalRootRole], 0))
+
+	// prepare the original targets file, without a delegation role, as an update
+	origTargetsUpdate := storage.MetaUpdate{
+		Role:    data.CanonicalTargetsRole,
+		Version: 1,
+		Data:    meta[data.CanonicalTargetsRole],
+	}
+	emptyStore := storage.NewMemStorage()
+	storeWithParent := storage.NewMemStorage()
+	storeWithParent.UpdateCurrent(gun, origTargetsUpdate)
+
+	// add a delegation role now
+	delgName := "targets/level1"
+	level1Key, err := cs.Create(delgName, gun, data.ECDSAKey)
+	require.NoError(t, err)
+	require.NoError(t, repo.UpdateDelegationKeys(delgName, []data.PublicKey{level1Key}, []string{}, 1))
+	// create the delegation metadata too
+	repo.InitTargets(delgName)
+
+	// re-serialize
+	meta, err = testutils.SignAndSerialize(repo)
+	require.NoError(t, err)
+	delgMeta, ok := meta[delgName]
+	require.True(t, ok)
+
+	delgUpdate := storage.MetaUpdate{
+		Role:    delgName,
+		Version: 1,
+		Data:    delgMeta,
+	}
+
+	// parent in update does not have this role, whether or not there's a parent in the store,
+	// so validation fails
+	roles := map[string]storage.MetaUpdate{
+		delgName:                  delgUpdate,
+		data.CanonicalTargetsRole: origTargetsUpdate,
+	}
+	for _, metaStore := range []storage.MetaStore{emptyStore, storeWithParent} {
+		updates, err := loadAndValidateTargets("gun", builder, roles, metaStore)
+		require.Error(t, err)
+		require.Empty(t, updates)
+		require.IsType(t, validation.ErrBadTargets{}, err)
+	}
+
+	// if the update is provided without the parent, then the parent from the
+	// store is loaded - if it doesn't have the role, then the update fails
+	updates, err := loadAndValidateTargets("gun", builder,
+		map[string]storage.MetaUpdate{delgName: delgUpdate}, storeWithParent)
+	require.Error(t, err)
+	require.Empty(t, updates)
+	require.IsType(t, validation.ErrBadTargets{}, err)
 }
 
 // ### End target validation with delegations tests

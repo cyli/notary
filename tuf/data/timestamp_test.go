@@ -16,7 +16,8 @@ import (
 func validTimestampTemplate() *SignedTimestamp {
 	return &SignedTimestamp{
 		Signed: Timestamp{
-			Type: "Timestamp", Version: 1, Expires: time.Now(), Meta: Files{
+			SignedCommon: SignedCommon{Type: "Timestamp", Version: 1, Expires: time.Now()},
+			Meta: Files{
 				CanonicalSnapshotRole: FileMeta{Hashes: Hashes{"sha256": bytes.Repeat([]byte("a"), sha256.Size)}},
 			}},
 		Signatures: []Signature{
@@ -26,7 +27,8 @@ func validTimestampTemplate() *SignedTimestamp {
 }
 
 func TestTimestampToSignedMarshalsSignedPortionWithCanonicalJSON(t *testing.T) {
-	ts := SignedTimestamp{Signed: Timestamp{Type: "Timestamp", Version: 1, Expires: time.Now()}}
+	ts := SignedTimestamp{Signed: Timestamp{
+		SignedCommon: SignedCommon{Type: "Timestamp", Version: 1, Expires: time.Now()}}}
 	signedCanonical, err := ts.ToSigned()
 	require.NoError(t, err)
 
@@ -43,7 +45,7 @@ func TestTimestampToSignedMarshalsSignedPortionWithCanonicalJSON(t *testing.T) {
 
 func TestTimestampToSignCopiesSignatures(t *testing.T) {
 	ts := SignedTimestamp{
-		Signed: Timestamp{Type: "Timestamp", Version: 2, Expires: time.Now()},
+		Signed: Timestamp{SignedCommon: SignedCommon{Type: "Timestamp", Version: 2, Expires: time.Now()}},
 		Signatures: []Signature{
 			{KeyID: "key1", Method: "method1", Signature: []byte("hello")},
 		},
@@ -63,7 +65,7 @@ func TestTimestampToSignedMarshallingErrorsPropagated(t *testing.T) {
 	setDefaultSerializer(errorSerializer{})
 	defer setDefaultSerializer(canonicalJSON{})
 	ts := SignedTimestamp{
-		Signed: Timestamp{Type: "Timestamp", Version: 2, Expires: time.Now()},
+		Signed: Timestamp{SignedCommon: SignedCommon{Type: "Timestamp", Version: 2, Expires: time.Now()}},
 	}
 	_, err := ts.ToSigned()
 	require.EqualError(t, err, "bad")
@@ -71,7 +73,7 @@ func TestTimestampToSignedMarshallingErrorsPropagated(t *testing.T) {
 
 func TestTimestampMarshalJSONMarshalsSignedWithRegularJSON(t *testing.T) {
 	ts := SignedTimestamp{
-		Signed: Timestamp{Type: "Timestamp", Version: 1, Expires: time.Now()},
+		Signed: Timestamp{SignedCommon: SignedCommon{Type: "Timestamp", Version: 1, Expires: time.Now()}},
 		Signatures: []Signature{
 			{KeyID: "key1", Method: "method1", Signature: []byte("hello")},
 			{KeyID: "key2", Method: "method2", Signature: []byte("there")},
@@ -96,7 +98,7 @@ func TestTimestampMarshalJSONMarshallingErrorsPropagated(t *testing.T) {
 	setDefaultSerializer(errorSerializer{})
 	defer setDefaultSerializer(canonicalJSON{})
 	ts := SignedTimestamp{
-		Signed: Timestamp{Type: "Timestamp", Version: 2, Expires: time.Now()},
+		Signed: Timestamp{SignedCommon: SignedCommon{Type: "Timestamp", Version: 2, Expires: time.Now()}},
 	}
 	_, err := ts.MarshalJSON()
 	require.EqualError(t, err, "bad")

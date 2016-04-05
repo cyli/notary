@@ -109,7 +109,7 @@ func snapshotExpired(ts *data.SignedTimestamp, snapshot []byte) bool {
 func createTimestamp(gun string, prev *data.SignedTimestamp, snapshot []byte, store storage.MetaStore,
 	cryptoService signed.CryptoService) (*storage.MetaUpdate, error) {
 
-	repo := tuf.NewRepo(cryptoService)
+	builder := tuf.NewRepoBuilder(nil, gun, cryptoService)
 
 	// load the current root to ensure we use the correct timestamp key.
 	_, root, err := store.GetCurrent(gun, data.CanonicalRootRole)
@@ -117,49 +117,24 @@ func createTimestamp(gun string, prev *data.SignedTimestamp, snapshot []byte, st
 		logrus.Debug("Previous timestamp, but no root for GUN ", gun)
 		return nil, err
 	}
-	r := &data.SignedRoot{}
-	err = json.Unmarshal(root, r)
-	if err != nil {
-		logrus.Debug("Could not unmarshal previous root for GUN ", gun)
+	if err := builder.Load(data.CanonicalRootRole, root, 0); err != nil {
+		logrus.Debug("Could not load valid previous root for GUN ", gun)
 		return nil, err
 	}
-	repo.SetRoot(r)
 
 	// load snapshot so we can include it in timestamp
-	sn := &data.SignedSnapshot{}
-	err = json.Unmarshal(snapshot, sn)
-	if err != nil {
-		logrus.Debug("Could not unmarshal previous snapshot for GUN ", gun)
+	if err := builder.Load(data.CanonicalSnapshotRole, snapshot, 0); err != nil {
+		logrus.Debug("Could not load valid previous snapshot for GUN ", gun)
 		return nil, err
 	}
-	repo.SetSnapshot(sn)
 
-	return NewTimestampUpdate(prev, repo)
-}
-
-// NewTimestampUpdate produces a new timestamp and returns it as a metadata update, given the
-// previous timestamp and the TUF repo assuming that the root and current snapshot have already
-// been loaded.
-func NewTimestampUpdate(prev *data.SignedTimestamp, repo *tuf.Repo) (*storage.MetaUpdate, error) {
-	if prev != nil {
-		repo.SetTimestamp(prev) // SetTimestamp never errors
-	} else {
-		// this will only occur if no timestamp has ever been created for the repository
-		if err := repo.InitTimestamp(); err != nil {
-			return nil, err
-		}
-	}
-	sgnd, err := repo.SignTimestamp(data.DefaultExpires(data.CanonicalTimestampRole))
-	if err != nil {
-		return nil, err
-	}
-	sgndJSON, err := json.Marshal(sgnd)
+	meta, ver, err := builder.GenerateTimestamp(prev)
 	if err != nil {
 		return nil, err
 	}
 	return &storage.MetaUpdate{
 		Role:    data.CanonicalTimestampRole,
-		Version: repo.Timestamp.Signed.Version,
-		Data:    sgndJSON,
+		Version: ver,
+		Data:    meta,
 	}, nil
 }

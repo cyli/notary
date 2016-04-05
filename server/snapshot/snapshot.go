@@ -65,62 +65,38 @@ func GetOrCreateSnapshot(gun string, store storage.MetaStore, cryptoService sign
 		return lastModified, currentJSON, nil
 	}
 
-	repo := tuf.NewRepo(cryptoService)
+	builder := tuf.NewRepoBuilder(nil, gun, cryptoService)
 
 	// load the current root to ensure we use the correct snapshot key.
 	_, rootJSON, err := store.GetCurrent(gun, data.CanonicalRootRole)
+	if err != nil {
+		logrus.Debug("Previous snapshot, but no root for GUN ", gun)
+		return nil, nil, err
+	}
+	if err := builder.Load(data.CanonicalRootRole, rootJSON, 0); err != nil {
+		logrus.Debug("Could not load valid previous root for GUN ", gun)
+		return nil, nil, err
+	}
 
+	meta, ver, err := builder.GenerateSnapshot(prev)
 	if err != nil {
 		return nil, nil, err
 	}
-	root := &data.SignedRoot{}
-	if err := json.Unmarshal(rootJSON, root); err != nil {
-		logrus.Error("Failed to unmarshal existing root for GUN ", gun)
-		return nil, nil, err
-	}
-	repo.SetRoot(root)
-
-	snapshotUpdate, err := NewSnapshotUpdate(prev, repo)
-	if err != nil {
-		logrus.Error("Failed to create a new snapshot")
-		return nil, nil, err
+	update := storage.MetaUpdate{
+		Role:    data.CanonicalTimestampRole,
+		Version: ver,
+		Data:    meta,
 	}
 
 	c := time.Now()
-	if err = store.UpdateCurrent(gun, *snapshotUpdate); err != nil {
+	if err = store.UpdateCurrent(gun, update); err != nil {
 		return nil, nil, err
 	}
 
-	return &c, snapshotUpdate.Data, nil
+	return &c, meta, nil
 }
 
 // snapshotExpired simply checks if the snapshot is past its expiry time
 func snapshotExpired(sn *data.SignedSnapshot) bool {
 	return signed.IsExpired(sn.Signed.Expires)
-}
-
-// NewSnapshotUpdate produces a new snapshot and returns it as a metadata update, given the
-// previous snapshot and the TUF repo.
-func NewSnapshotUpdate(prev *data.SignedSnapshot, repo *tuf.Repo) (*storage.MetaUpdate, error) {
-	if prev != nil {
-		repo.SetSnapshot(prev) // SetSnapshot never errors
-	} else {
-		// this will only occur if no snapshot has ever been created for the repository
-		if err := repo.InitSnapshot(); err != nil {
-			return nil, err
-		}
-	}
-	sgnd, err := repo.SignSnapshot(data.DefaultExpires(data.CanonicalSnapshotRole))
-	if err != nil {
-		return nil, err
-	}
-	sgndJSON, err := json.Marshal(sgnd)
-	if err != nil {
-		return nil, err
-	}
-	return &storage.MetaUpdate{
-		Role:    data.CanonicalSnapshotRole,
-		Version: repo.Snapshot.Signed.Version,
-		Data:    sgndJSON,
-	}, nil
 }

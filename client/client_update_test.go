@@ -2,7 +2,6 @@ package client
 
 import (
 	"bytes"
-	"encoding/json"
 	"fmt"
 	"io/ioutil"
 	"net/http"
@@ -13,6 +12,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/docker/go/canonical/json"
 
 	"github.com/docker/notary/certs"
 	"github.com/docker/notary/passphrase"

@@ -93,7 +93,7 @@ func ValidateRoot(certStore trustmanager.X509Store, root *data.Signed, gun strin
 	// use them first to validate that this new root is valid.
 	if len(certsForCN) != 0 {
 		logrus.Debugf("found %d valid root certificates for %s", len(certsForCN), gun)
-		err = signed.VerifyRoot(root, 0, trustmanager.CertsToKeys(certsForCN))
+		err = signed.VerifyRoot(root, trustmanager.CertsToKeys(certsForCN))
 		if err != nil {
 			logrus.Debugf("failed to verify TUF data for: %s, %v", gun, err)
 			return &ErrValidationFail{Reason: "failed to validate data with current trusted certificates"}
@@ -103,7 +103,7 @@ func ValidateRoot(certStore trustmanager.X509Store, root *data.Signed, gun strin
 	}
 
 	// Validate the integrity of the new root (does it have valid signatures)
-	err = signed.VerifyRoot(root, 0, trustmanager.CertsToKeys(allValidCerts))
+	err = signed.VerifyRoot(root, trustmanager.CertsToKeys(allValidCerts))
 	if err != nil {
 		logrus.Debugf("failed to verify TUF data for: %s, %v", gun, err)
 		return &ErrValidationFail{Reason: "failed to validate integrity of roots"}

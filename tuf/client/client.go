@@ -121,7 +121,7 @@ func (c *Client) downloadTimestamp() error {
 		logrus.Debug(remoteErr.Error())
 		logrus.Warn("Error while downloading remote metadata, using cached timestamp - this might not be the latest version available remotely")
 
-		err := c.builder.Load(role, cachedTS, 0)
+		err := c.builder.Load(role, cachedTS, 0, false)
 		if err == nil {
 			logrus.Debug("successfully verified cached timestamp")
 		}
@@ -202,7 +202,7 @@ func (c *Client) tryLoadCacheThenRemote(role string, size int64, expectedSha256 
 		return c.tryLoadRemote(role, size, expectedSha256, nil)
 	}
 
-	if err = c.builder.Load(role, cachedTS, 0); err == nil {
+	if err = c.builder.Load(role, cachedTS, 0, false); err == nil {
 		logrus.Debugf("successfully verified cached %s", role)
 		return cachedTS, nil
 	}
@@ -225,7 +225,7 @@ func (c *Client) tryLoadRemote(role string, size int64, expectedSha256, old []by
 			minVersion = oldSignedMeta.Signed.Version
 		}
 	}
-	if err := c.builder.Load(role, raw, minVersion); err != nil {
+	if err := c.builder.Load(role, raw, minVersion, false); err != nil {
 		logrus.Debugf("downloaded %s is invalid: %s", role, err)
 		return raw, err
 	}

@@ -664,7 +664,7 @@ func (r *NotaryRepository) bootstrapRepo() error {
 			}
 			return err
 		}
-		if err := b.Load(role, jsonBytes, 0); err != nil {
+		if err := b.Load(role, jsonBytes, 0, false); err != nil {
 			return err
 		}
 	}
@@ -772,7 +772,7 @@ func (r *NotaryRepository) bootstrapClient(checkInitialized bool) (tuf.RepoBuild
 	rootJSON, cachedRootErr := r.fileStore.GetMeta(data.CanonicalRootRole, -1)
 
 	if cachedRootErr == nil {
-		cachedRootErr = b.Load(data.CanonicalRootRole, rootJSON, version)
+		cachedRootErr = b.Load(data.CanonicalRootRole, rootJSON, version, false)
 		if cachedRootErr == nil {
 			successfullyBootstrapped = true
 		} else {
@@ -802,7 +802,7 @@ func (r *NotaryRepository) bootstrapClient(checkInitialized bool) (tuf.RepoBuild
 		if cachedRootErr != nil {
 			// we always want to use the downloaded root if there was a cache
 			// error.
-			err := b.Load(data.CanonicalRootRole, tmpJSON, version)
+			err := b.Load(data.CanonicalRootRole, tmpJSON, version, false)
 			if err != nil {
 				return nil, err
 			}

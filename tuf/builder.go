@@ -39,7 +39,7 @@ func (e ErrInvalidBuilderInput) Error() string {
 
 // RepoBuilder is an interface for an object which builds a tuf.Repo
 type RepoBuilder interface {
-	Load(roleName string, content []byte, minVersion int) error
+	Load(roleName string, content []byte, minVersion int, allowExpired bool) error
 	GenerateSnapshot(prev *data.SignedSnapshot) ([]byte, int, error)
 	GenerateTimestamp(prev *data.SignedTimestamp) ([]byte, int, error)
 	Finish() (*Repo, error)
@@ -118,7 +118,7 @@ func (rb *repoBuilder) BootstrapNewBuilder() RepoBuilder {
 	}
 }
 
-func (rb *repoBuilder) Load(roleName string, content []byte, minVersion int) error {
+func (rb *repoBuilder) Load(roleName string, content []byte, minVersion int, allowExpired bool) error {
 	if !data.ValidRole(roleName) {
 		return ErrInvalidBuilderInput{msg: fmt.Sprintf("%s is an invalid role", roleName)}
 	}
@@ -142,15 +142,15 @@ func (rb *repoBuilder) Load(roleName string, content []byte, minVersion int) err
 
 	switch roleName {
 	case data.CanonicalRootRole:
-		return rb.loadRoot(content, minVersion)
+		return rb.loadRoot(content, minVersion, allowExpired)
 	case data.CanonicalSnapshotRole:
-		return rb.loadSnapshot(content, minVersion)
+		return rb.loadSnapshot(content, minVersion, allowExpired)
 	case data.CanonicalTimestampRole:
-		return rb.loadTimestamp(content, minVersion)
+		return rb.loadTimestamp(content, minVersion, allowExpired)
 	case data.CanonicalTargetsRole:
-		return rb.loadTargets(content, minVersion)
+		return rb.loadTargets(content, minVersion, allowExpired)
 	default:
-		return rb.loadDelegation(roleName, content, minVersion)
+		return rb.loadDelegation(roleName, content, minVersion, allowExpired)
 	}
 }
 
@@ -285,7 +285,7 @@ func (rb *repoBuilder) GenerateTimestamp(prev *data.SignedTimestamp) ([]byte, in
 }
 
 // loadRoot loads a root if one has not been loaded
-func (rb *repoBuilder) loadRoot(content []byte, minVersion int) error {
+func (rb *repoBuilder) loadRoot(content []byte, minVersion int, allowExpired bool) error {
 	roleName := data.CanonicalRootRole
 
 	signedObj, err := rb.bytesToSigned(content, data.CanonicalRootRole)
@@ -304,13 +304,23 @@ func (rb *repoBuilder) loadRoot(content []byte, minVersion int) error {
 		return err
 	}
 
+	if err := signed.VerifyVersion(&(signedRoot.Signed.SignedCommon), minVersion); err != nil {
+		return err
+	}
+
 	rootRole, err := signedRoot.BuildBaseRole(roleName)
 	if err != nil { // this should never happen, since it's already been validated
 		return err
 	}
 	// validate that the signatures for the root are consistent with its own definitions
-	if err := signed.Verify(signedObj, rootRole, minVersion); err != nil {
+	if err := signed.VerifySignatures(signedObj, rootRole); err != nil {
 		return err
+	}
+
+	if !allowExpired { // check must go at the end because all other validation should pass
+		if err := signed.VerifyExpiry(&(signedRoot.Signed.SignedCommon), roleName); err != nil {
+			return err
+		}
 	}
 
 	rb.repo.SetRoot(signedRoot)
@@ -348,7 +358,7 @@ func (rb *repoBuilder) verifyPinnedTrust(signedObj *data.Signed) error {
 	return nil
 }
 
-func (rb *repoBuilder) loadTimestamp(content []byte, minVersion int) error {
+func (rb *repoBuilder) loadTimestamp(content []byte, minVersion int, allowExpired bool) error {
 	roleName := data.CanonicalTimestampRole
 
 	timestampRole, err := rb.repo.Root.BuildBaseRole(roleName)
@@ -356,7 +366,7 @@ func (rb *repoBuilder) loadTimestamp(content []byte, minVersion int) error {
 		return err
 	}
 
-	signedObj, err := rb.bytesToSignedAndValidateSigs(timestampRole, content, minVersion)
+	signedObj, err := rb.bytesToSignedAndValidateSigs(timestampRole, content)
 	if err != nil {
 		return err
 	}
@@ -366,11 +376,21 @@ func (rb *repoBuilder) loadTimestamp(content []byte, minVersion int) error {
 		return err
 	}
 
+	if err := signed.VerifyVersion(&(signedTimestamp.Signed.SignedCommon), minVersion); err != nil {
+		return err
+	}
+
+	if !allowExpired { // check must go at the end because all other validation should pass
+		if err := signed.VerifyExpiry(&(signedTimestamp.Signed.SignedCommon), roleName); err != nil {
+			return err
+		}
+	}
+
 	rb.repo.SetTimestamp(signedTimestamp)
 	return rb.validateCachedTimestampChecksums(signedTimestamp)
 }
 
-func (rb *repoBuilder) loadSnapshot(content []byte, minVersion int) error {
+func (rb *repoBuilder) loadSnapshot(content []byte, minVersion int, allowExpired bool) error {
 	roleName := data.CanonicalSnapshotRole
 
 	snapshotRole, err := rb.repo.Root.BuildBaseRole(roleName)
@@ -378,7 +398,7 @@ func (rb *repoBuilder) loadSnapshot(content []byte, minVersion int) error {
 		return err
 	}
 
-	signedObj, err := rb.bytesToSignedAndValidateSigs(snapshotRole, content, minVersion)
+	signedObj, err := rb.bytesToSignedAndValidateSigs(snapshotRole, content)
 	if err != nil {
 		return err
 	}
@@ -388,11 +408,21 @@ func (rb *repoBuilder) loadSnapshot(content []byte, minVersion int) error {
 		return err
 	}
 
+	if err := signed.VerifyVersion(&(signedSnapshot.Signed.SignedCommon), minVersion); err != nil {
+		return err
+	}
+
+	if !allowExpired { // check must go at the end because all other validation should pass
+		if err := signed.VerifyExpiry(&(signedSnapshot.Signed.SignedCommon), roleName); err != nil {
+			return err
+		}
+	}
+
 	rb.repo.SetSnapshot(signedSnapshot)
 	return rb.validateCachedSnapshotChecksums(signedSnapshot)
 }
 
-func (rb *repoBuilder) loadTargets(content []byte, minVersion int) error {
+func (rb *repoBuilder) loadTargets(content []byte, minVersion int, allowExpired bool) error {
 	roleName := data.CanonicalTargetsRole
 
 	targetsRole, err := rb.repo.Root.BuildBaseRole(roleName)
@@ -400,7 +430,7 @@ func (rb *repoBuilder) loadTargets(content []byte, minVersion int) error {
 		return err
 	}
 
-	signedObj, err := rb.bytesToSignedAndValidateSigs(targetsRole, content, minVersion)
+	signedObj, err := rb.bytesToSignedAndValidateSigs(targetsRole, content)
 	if err != nil {
 		return err
 	}
@@ -408,19 +438,29 @@ func (rb *repoBuilder) loadTargets(content []byte, minVersion int) error {
 	signedTargets, err := data.TargetsFromSigned(signedObj, roleName)
 	if err != nil {
 		return err
+	}
+
+	if err := signed.VerifyVersion(&(signedTargets.Signed.SignedCommon), minVersion); err != nil {
+		return err
+	}
+
+	if !allowExpired { // check must go at the end because all other validation should pass
+		if err := signed.VerifyExpiry(&(signedTargets.Signed.SignedCommon), roleName); err != nil {
+			return err
+		}
 	}
 
 	rb.repo.SetTargets(roleName, signedTargets)
 	return nil
 }
 
-func (rb *repoBuilder) loadDelegation(roleName string, content []byte, minVersion int) error {
+func (rb *repoBuilder) loadDelegation(roleName string, content []byte, minVersion int, allowExpired bool) error {
 	delegationRole, err := rb.repo.GetDelegationRole(roleName)
 	if err != nil {
 		return err
 	}
 
-	signedObj, err := rb.bytesToSignedAndValidateSigs(delegationRole.BaseRole, content, minVersion)
+	signedObj, err := rb.bytesToSignedAndValidateSigs(delegationRole.BaseRole, content)
 	if err != nil {
 		return err
 	}
@@ -428,6 +468,16 @@ func (rb *repoBuilder) loadDelegation(roleName string, content []byte, minVersio
 	signedTargets, err := data.TargetsFromSigned(signedObj, roleName)
 	if err != nil {
 		return err
+	}
+
+	if err := signed.VerifyVersion(&(signedTargets.Signed.SignedCommon), minVersion); err != nil {
+		return err
+	}
+
+	if !allowExpired { // check must go at the end because all other validation should pass
+		if err := signed.VerifyExpiry(&(signedTargets.Signed.SignedCommon), roleName); err != nil {
+			return err
+		}
 	}
 
 	rb.repo.SetTargets(roleName, signedTargets)
@@ -506,16 +556,15 @@ func (rb *repoBuilder) bytesToSigned(content []byte, roleName string) (*data.Sig
 	return signedObj, nil
 }
 
-func (rb *repoBuilder) bytesToSignedAndValidateSigs(role data.BaseRole, content []byte, minVersion int) (
-	*data.Signed, error) {
+func (rb *repoBuilder) bytesToSignedAndValidateSigs(role data.BaseRole, content []byte) (*data.Signed, error) {
 
 	signedObj, err := rb.bytesToSigned(content, role.Name)
 	if err != nil {
 		return nil, err
 	}
 
-	// verify signature, version, and expiry
-	if err := signed.Verify(signedObj, role, minVersion); err != nil {
+	// verify signature
+	if err := signed.VerifySignatures(signedObj, role); err != nil {
 		return nil, err
 	}
 

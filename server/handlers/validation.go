@@ -43,7 +43,7 @@ func validateUpdate(cs signed.CryptoService, gun string, updates []storage.MetaU
 
 	if rootUpdate, ok := roles[data.CanonicalRootRole]; ok {
 		builder = builder.BootstrapNewBuilder()
-		if err := builder.Load(data.CanonicalRootRole, rootUpdate.Data, 0); err != nil {
+		if err := builder.Load(data.CanonicalRootRole, rootUpdate.Data, 0, false); err != nil {
 			return nil, validation.ErrBadRoot{Msg: err.Error()}
 		}
 
@@ -66,7 +66,7 @@ func validateUpdate(cs signed.CryptoService, gun string, updates []storage.MetaU
 
 	// At this point, root and targets must have been loaded into the repo
 	if snapshotUpdate, ok := roles[data.CanonicalSnapshotRole]; ok {
-		if err := builder.Load(data.CanonicalSnapshotRole, snapshotUpdate.Data, 0); err != nil {
+		if err := builder.Load(data.CanonicalSnapshotRole, snapshotUpdate.Data, 0, false); err != nil {
 			return nil, validation.ErrBadSnapshot{Msg: err.Error()}
 		}
 		logrus.Debug("Successfully validated snapshot")
@@ -130,7 +130,7 @@ func loadAndValidateTargets(gun string, builder tuf.RepoBuilder, roles map[strin
 			}
 		}
 
-		if err := builder.Load(roleName, roles[roleName].Data, 0); err != nil {
+		if err := builder.Load(roleName, roles[roleName].Data, 0, false); err != nil {
 			logrus.Error("ErrBadTargets: ", err.Error())
 			return nil, validation.ErrBadTargets{Msg: err.Error()}
 		}
@@ -222,7 +222,7 @@ func loadFromStore(gun, roleName string, builder tuf.RepoBuilder, store storage.
 	if err != nil {
 		return err
 	}
-	if err := builder.Load(roleName, metaJSON, 0); err != nil {
+	if err := builder.Load(roleName, metaJSON, 0, false); err != nil {
 		return err
 	}
 	return nil

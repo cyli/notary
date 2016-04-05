@@ -1084,8 +1084,8 @@ func TestGenerateSnapshotNoKey(t *testing.T) {
 
 	builder := tuf.NewRepoBuilder(nil, "gun", cs)
 	// only load root and targets
-	require.NoError(t, builder.Load(data.CanonicalRootRole, metadata[data.CanonicalRootRole], 0))
-	require.NoError(t, builder.Load(data.CanonicalTargetsRole, metadata[data.CanonicalTargetsRole], 0))
+	require.NoError(t, builder.Load(data.CanonicalRootRole, metadata[data.CanonicalRootRole], 0, false))
+	require.NoError(t, builder.Load(data.CanonicalTargetsRole, metadata[data.CanonicalTargetsRole], 0, false))
 
 	_, err = generateSnapshot("gun", builder, store)
 	require.Error(t, err)
@@ -1102,7 +1102,7 @@ func TestLoadTargetsLoadsNothingIfNoUpdates(t *testing.T) {
 
 	// load the root into the builder, else we can't load anything else
 	builder := tuf.NewRepoBuilder(nil, gun, nil)
-	require.NoError(t, builder.Load(data.CanonicalRootRole, metadata[data.CanonicalRootRole], 0))
+	require.NoError(t, builder.Load(data.CanonicalRootRole, metadata[data.CanonicalRootRole], 0, false))
 
 	store := storage.NewMemStorage()
 	store.UpdateCurrent(gun, storage.MetaUpdate{
@@ -1128,7 +1128,7 @@ func TestValidateTargetsRequiresStoredParent(t *testing.T) {
 
 	// load the root into the builder, else we can't load anything else
 	builder := tuf.NewRepoBuilder(nil, "gun", nil)
-	require.NoError(t, builder.Load(data.CanonicalRootRole, metadata[data.CanonicalRootRole], 0))
+	require.NoError(t, builder.Load(data.CanonicalRootRole, metadata[data.CanonicalRootRole], 0, false))
 
 	delUpdate := storage.MetaUpdate{
 		Role:    delgName,
@@ -1170,7 +1170,7 @@ func TestValidateTargetsParentInUpdate(t *testing.T) {
 
 	// load the root into the builder, else we can't load anything else
 	builder := tuf.NewRepoBuilder(nil, gun, nil)
-	require.NoError(t, builder.Load(data.CanonicalRootRole, metadata[data.CanonicalRootRole], 0))
+	require.NoError(t, builder.Load(data.CanonicalRootRole, metadata[data.CanonicalRootRole], 0, false))
 
 	targetsUpdate := storage.MetaUpdate{
 		Role:    data.CanonicalTargetsRole,
@@ -1217,7 +1217,7 @@ func TestValidateTargetsRoleNotInParent(t *testing.T) {
 
 	// load the root into the builder, else we can't load anything else
 	builder := tuf.NewRepoBuilder(nil, gun, nil)
-	require.NoError(t, builder.Load(data.CanonicalRootRole, meta[data.CanonicalRootRole], 0))
+	require.NoError(t, builder.Load(data.CanonicalRootRole, meta[data.CanonicalRootRole], 0, false))
 
 	// prepare the original targets file, without a delegation role, as an update
 	origTargetsUpdate := storage.MetaUpdate{

@@ -185,18 +185,3 @@ func TestTimestampFromSignedValidatesRoleType(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, "Timestamp", sTimestamp.Signed.Type)
 }
-
-// GetSnapshot returns the snapshot checksum, or an error if it is missing.
-func TestTimestampGetSnapshot(t *testing.T) {
-	ts := validTimestampTemplate()
-	f, err := ts.GetSnapshot()
-	require.NoError(t, err)
-	require.IsType(t, &FileMeta{}, f)
-
-	// no timestamp meta
-	delete(ts.Signed.Meta, CanonicalSnapshotRole)
-	f, err = ts.GetSnapshot()
-	require.Error(t, err)
-	require.IsType(t, ErrMissingMeta{}, err)
-	require.Nil(t, f)
-}

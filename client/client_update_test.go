@@ -16,7 +16,6 @@ import (
 
 	"github.com/docker/notary/certs"
 	"github.com/docker/notary/passphrase"
-	"github.com/docker/notary/tuf/client"
 	"github.com/docker/notary/tuf/data"
 	"github.com/docker/notary/tuf/signed"
 	"github.com/docker/notary/tuf/store"
@@ -106,14 +105,10 @@ func TestUpdateSucceedsEvenIfCannotWriteNewRepo(t *testing.T) {
 	for role := range serverMeta {
 		repo := newBlankRepo(t, ts.URL)
 		repo.fileStore = &unwritableStore{MetadataStore: repo.fileStore, roleToNotWrite: role}
+
 		_, err := repo.Update(false)
 
-		if role == data.CanonicalRootRole {
-			require.Error(t, err) // because checkRoot loads root from cache to check hashes
-			continue
-		} else {
-			require.NoError(t, err)
-		}
+		require.NoError(t, err)
 
 		for r, expected := range serverMeta {
 			actual, err := repo.fileStore.GetMeta(r, -1)
@@ -160,10 +155,6 @@ func TestUpdateSucceedsEvenIfCannotWriteExistingRepo(t *testing.T) {
 			repo.fileStore = &unwritableStore{MetadataStore: origFileStore, roleToNotWrite: role}
 			_, err := repo.Update(forWrite)
 
-			if role == data.CanonicalRootRole {
-				require.Error(t, err) // because checkRoot loads root from cache to check hashes
-				continue
-			}
 			require.NoError(t, err)
 
 			for r, expected := range serverMeta {
@@ -753,13 +744,13 @@ func testUpdateRemoteFileChecksumWrong(t *testing.T, opts updateOpts, errExpecte
 		if opts.role == data.CanonicalTimestampRole {
 			_, rightError = err.(store.ErrMaliciousServer)
 		} else {
-			_, isErrChecksum := err.(client.ErrChecksumMismatch)
+			_, isErrChecksum := err.(data.ErrMismatchedChecksum)
 			_, isErrMaliciousServer := err.(store.ErrMaliciousServer)
 			rightError = isErrChecksum || isErrMaliciousServer
 		}
-		require.True(t, rightError, err,
+		require.True(t, rightError,
 			"wrong update error (%v) when %s has the wrong checksum (forWrite: %v)",
-			err, opts.role, opts.forWrite)
+			reflect.TypeOf(err), opts.role, opts.forWrite)
 	}
 }
 
@@ -931,7 +922,7 @@ func waysToMessUpServerNonRootPerRole(t *testing.T) map[string][]swizzleExpectat
 	}
 	perRoleSwizzling[data.CanonicalTargetsRole] = []swizzleExpectations{{
 		desc:       fmt.Sprintf("target missing delegations data"),
-		expectErrs: []interface{}{client.ErrChecksumMismatch{}},
+		expectErrs: []interface{}{data.ErrMismatchedChecksum{}},
 		swizzle: func(s *testutils.MetadataSwizzler, role string) error {
 			return s.MutateTargets(func(tg *data.Targets) {
 				tg.Delegations.Roles = tg.Delegations.Roles[1:]

@@ -94,16 +94,6 @@ func (ts *SignedTimestamp) ToSigned() (*Signed, error) {
 	}, nil
 }
 
-// GetSnapshot gets the expected snapshot metadata hashes in the timestamp metadata,
-// or nil if it doesn't exist
-func (ts *SignedTimestamp) GetSnapshot() (*FileMeta, error) {
-	snapshotExpected, ok := ts.Signed.Meta[CanonicalSnapshotRole]
-	if !ok {
-		return nil, ErrMissingMeta{Role: CanonicalSnapshotRole}
-	}
-	return &snapshotExpected, nil
-}
-
 // MarshalJSON returns the serialized form of SignedTimestamp as bytes
 func (ts *SignedTimestamp) MarshalJSON() ([]byte, error) {
 	signed, err := ts.ToSigned()

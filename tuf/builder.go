@@ -73,7 +73,7 @@ type repoBuilder struct {
 	loadedNotChecksummed map[string][]byte
 
 	// needed for bootstrapping a builder to validate a new root
-	rootRole     *data.BaseRole
+	oldRoot      *data.SignedRoot
 	rootChecksum *data.Hashes
 }
 
@@ -91,17 +91,9 @@ func (rb *repoBuilder) Finish() (*Repo, error) {
 }
 
 func (rb *repoBuilder) BootstrapNewBuilder() RepoBuilder {
-	var rootRole *data.BaseRole
+	oldRoot := rb.repo.Root
 	var rootChecksum *data.Hashes
 
-	if rb.repo.Root != nil {
-		roleObj, err := rb.repo.GetBaseRole(data.CanonicalRootRole)
-		// this should always be true, since it was already validated, otherwise something
-		// is very wrong and we should not bootstrap with this root
-		if err == nil {
-			rootRole = &roleObj
-		}
-	}
 	if rb.repo.Snapshot != nil {
 		hashes := rb.repo.Snapshot.Signed.Meta[data.CanonicalRootRole].Hashes
 		rootChecksum = &hashes
@@ -113,7 +105,7 @@ func (rb *repoBuilder) BootstrapNewBuilder() RepoBuilder {
 		certStore:            rb.certStore,
 		loadedNotChecksummed: make(map[string][]byte),
 
-		rootRole:     rootRole,
+		oldRoot:      oldRoot,
 		rootChecksum: rootChecksum,
 	}
 }
@@ -304,6 +296,11 @@ func (rb *repoBuilder) loadRoot(content []byte, minVersion int, allowExpired boo
 		return err
 	}
 
+	// if we bootstrapped with an old root, also make sure the new root is a higher
+	// version than the bootstrapped root as well
+	if rb.oldRoot != nil && rb.oldRoot.Signed.Version > minVersion {
+		minVersion = rb.oldRoot.Signed.Version
+	}
 	if err := signed.VerifyVersion(&(signedRoot.Signed.SignedCommon), minVersion); err != nil {
 		return err
 	}
@@ -332,13 +329,17 @@ func (rb *repoBuilder) verifyPinnedTrust(signedObj *data.Signed) error {
 	// Old root takes precedence over the cert pinning, because presumably the
 	// old root had been verified via cert pinning, and the new root might have
 	// rotated keys which are not in the pinned certs yet
-	if rb.rootRole != nil {
+	if rb.oldRoot != nil {
+		rootRole, err := rb.oldRoot.BuildBaseRole(data.CanonicalRootRole)
+		if err != nil {
+			return err
+		}
 		// verify with existing keys rather than trust pinning
-		err := signed.VerifySignatures(signedObj, *rb.rootRole)
+		err = signed.VerifySignatures(signedObj, rootRole)
 		if _, ok := err.(signed.ErrRoleThreshold); ok {
 			return signed.ErrRoleThreshold{
 				Msg: fmt.Sprintf("rotation detected and new root was not signed with at least %v old keys",
-					rb.rootRole.Threshold)}
+					rootRole.Threshold)}
 			logrus.Debug("TUF repo builder:", err.Error())
 		}
 		return err

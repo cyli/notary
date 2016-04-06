@@ -762,24 +762,19 @@ func (r *NotaryRepository) Update(forWrite bool) (*tufclient.Client, error) {
 // is initialized or not. If set to true, we will always attempt to download
 // and return an error if the remote repository errors.
 func (r *NotaryRepository) bootstrapClient(checkInitialized bool) (tuf.RepoBuilder, error) {
-	var successfullyBootstrapped bool
-	version := 0
-	b := tuf.NewRepoBuilder(r.CertStore, r.gun, r.CryptoService)
+	builder := tuf.NewRepoBuilder(r.CertStore, r.gun, r.CryptoService)
 
 	// try to read root from cache first. We will trust this root
 	// until we detect a problem during update which will cause
 	// us to download a new root and perform a rotation.
-	rootJSON, cachedRootErr := r.fileStore.GetMeta(data.CanonicalRootRole, -1)
-
-	if cachedRootErr == nil {
-		cachedRootErr = b.Load(data.CanonicalRootRole, rootJSON, version, false)
-		if cachedRootErr == nil {
-			successfullyBootstrapped = true
-		} else {
-			// try to get the version if we can
-			signedMeta := &data.SignedMeta{}
-			if err := json.Unmarshal(rootJSON, signedMeta); err == nil {
-				version = signedMeta.Signed.Version
+	if rootJSON, err := r.fileStore.GetMeta(data.CanonicalRootRole, -1); err == nil {
+		if err := builder.Load(data.CanonicalRootRole, rootJSON, 0, true); err == nil {
+			// explicitly check the expiry, since we skipped the check above - if it's
+			// expired, but otherwise good, we'll just use the root to bootstrap downloading
+			// a new one (use the previous root role and version)
+			repoSoFar := builder.GetRepo()
+			if signed.IsExpired(repoSoFar.Root.Signed.Expires) {
+				builder = builder.BootstrapNewBuilder()
 			}
 		}
 	}
@@ -787,9 +782,9 @@ func (r *NotaryRepository) bootstrapClient(checkInitialized bool) (tuf.RepoBuild
 	remote, remoteErr := getRemoteStore(r.baseURL, r.gun, r.roundTrip)
 	if remoteErr != nil {
 		logrus.Error(remoteErr)
-	} else if cachedRootErr != nil || checkInitialized {
-		// remoteErr was nil and we had a cachedRootErr (or are specifically
-		// checking for initialization of the repo).
+	} else if !builder.IsLoaded(data.CanonicalRootRole) || checkInitialized {
+		// remoteErr was nil and we were not able to load a root from cache or
+		// are specifically checking for initialization of the repo.
 
 		// if remote store successfully set up, try and get root from remote
 		// We don't have any local data to determine the size of root, so try the maximum (though it is restricted at 100MB)
@@ -799,10 +794,9 @@ func (r *NotaryRepository) bootstrapClient(checkInitialized bool) (tuf.RepoBuild
 			// the server. Nothing we can do but error.
 			return nil, err
 		}
-		if cachedRootErr != nil {
-			// we always want to use the downloaded root if there was a cache
-			// error.
-			err := b.Load(data.CanonicalRootRole, tmpJSON, version, false)
+		if !builder.IsLoaded(data.CanonicalRootRole) {
+			// we always want to use the downloaded root if we couldn't load from cache
+			err := builder.Load(data.CanonicalRootRole, tmpJSON, 0, false)
 			if err != nil {
 				return nil, err
 			}
@@ -812,15 +806,14 @@ func (r *NotaryRepository) bootstrapClient(checkInitialized bool) (tuf.RepoBuild
 				// if we can't write cache we should still continue, just log error
 				logrus.Errorf("could not save root to cache: %s", err.Error())
 			}
-			successfullyBootstrapped = true
 		}
 	}
 
-	if !successfullyBootstrapped {
+	if !builder.IsLoaded(data.CanonicalRootRole) {
 		return nil, ErrRepoNotInitialized{}
 	}
 
-	return b, nil
+	return builder, nil
 }
 
 // RotateKey removes all existing keys associated with the role, and either

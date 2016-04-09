@@ -4,7 +4,7 @@ import (
 	"time"
 )
 
-// application wide constants
+// application wide constants stuff
 const (
 	// MaxDownloadSize is the maximum size we'll download for metadata if no limit is given
 	MaxDownloadSize int64 = 100 << 20

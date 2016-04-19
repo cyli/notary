@@ -17,7 +17,7 @@ import (
 	"github.com/docker/notary/server/storage"
 	"github.com/docker/notary/tuf/data"
 	"github.com/docker/notary/tuf/signed"
-	"github.com/docker/notary/tuf/testutils"
+	"github.com/docker/notary/tuf/testutils/repoutils"
 	"github.com/docker/notary/utils"
 	"github.com/stretchr/testify/require"
 	"golang.org/x/net/context"
@@ -165,7 +165,7 @@ func TestGetRoleByHash(t *testing.T) {
 // tests are located in /server/handlers/
 func TestGetCurrentRole(t *testing.T) {
 	store := storage.NewMemStorage()
-	metadata, _, err := testutils.NewRepoMetadata("gun")
+	metadata, _, err := repoutils.NewRepoMetadata("gun")
 	require.NoError(t, err)
 
 	// need both the snapshot and the timestamp, because when getting the current

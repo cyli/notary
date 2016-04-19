@@ -12,6 +12,7 @@ import (
 	"github.com/Sirupsen/logrus"
 	tuf "github.com/docker/notary/tuf"
 	"github.com/docker/notary/tuf/testutils"
+	"github.com/docker/notary/tuf/testutils/repoutils"
 	"github.com/stretchr/testify/require"
 
 	"github.com/docker/notary/tuf/data"
@@ -326,7 +327,7 @@ func TestSizeMismatchShort(t *testing.T) {
 }
 
 func TestDownloadTargetsHappy(t *testing.T) {
-	repo, _, err := testutils.EmptyRepo("docker.com/notary")
+	repo, _, err := repoutils.EmptyRepo("docker.com/notary")
 	require.NoError(t, err)
 	localStorage := store.NewMemoryStore(nil)
 	remoteStorage := store.NewMemoryStore(nil)
@@ -354,7 +355,7 @@ func TestDownloadTargetsLarge(t *testing.T) {
 		t.Skip("skipping test in short mode")
 	}
 
-	repo, _, err := testutils.EmptyRepo("docker.com/notary")
+	repo, _, err := repoutils.EmptyRepo("docker.com/notary")
 	require.NoError(t, err)
 	localStorage := store.NewMemoryStore(nil)
 	remoteStorage := store.NewMemoryStore(nil)
@@ -392,7 +393,7 @@ func TestDownloadTargetsLarge(t *testing.T) {
 }
 
 func TestDownloadTargetsDeepHappy(t *testing.T) {
-	repo, cs, err := testutils.EmptyRepo("docker.com/notary")
+	repo, cs, err := repoutils.EmptyRepo("docker.com/notary")
 	require.NoError(t, err)
 	localStorage := store.NewMemoryStore(nil)
 	remoteStorage := store.NewMemoryStore(nil)
@@ -468,7 +469,7 @@ func TestDownloadTargetsDeepHappy(t *testing.T) {
 }
 
 func TestDownloadTargetChecksumMismatch(t *testing.T) {
-	repo, _, err := testutils.EmptyRepo("docker.com/notary")
+	repo, _, err := repoutils.EmptyRepo("docker.com/notary")
 	require.NoError(t, err)
 	localStorage := store.NewMemoryStore(nil)
 	remoteStorage := testutils.NewCorruptingMemoryStore(nil)
@@ -506,7 +507,7 @@ func TestDownloadTargetChecksumMismatch(t *testing.T) {
 // TestDownloadTargetsNoChecksum: it's never valid to download any targets
 // role (incl. delegations) when a checksum is not available.
 func TestDownloadTargetsNoChecksum(t *testing.T) {
-	repo, _, err := testutils.EmptyRepo("docker.com/notary")
+	repo, _, err := repoutils.EmptyRepo("docker.com/notary")
 	require.NoError(t, err)
 	localStorage := store.NewMemoryStore(nil)
 	remoteStorage := store.NewMemoryStore(nil)
@@ -530,7 +531,7 @@ func TestDownloadTargetsNoChecksum(t *testing.T) {
 // TestDownloadTargetsNoSnapshot: it's never valid to download any targets
 // role (incl. delegations) when a checksum is not available.
 func TestDownloadTargetsNoSnapshot(t *testing.T) {
-	repo, _, err := testutils.EmptyRepo("docker.com/notary")
+	repo, _, err := repoutils.EmptyRepo("docker.com/notary")
 	require.NoError(t, err)
 	localStorage := store.NewMemoryStore(nil)
 	remoteStorage := store.NewMemoryStore(nil)
@@ -551,7 +552,7 @@ func TestDownloadTargetsNoSnapshot(t *testing.T) {
 }
 
 func TestBootstrapDownloadRootHappy(t *testing.T) {
-	repo, _, err := testutils.EmptyRepo("docker.com/notary")
+	repo, _, err := repoutils.EmptyRepo("docker.com/notary")
 	require.NoError(t, err)
 	localStorage := store.NewMemoryStore(nil)
 	remoteStorage := store.NewMemoryStore(nil)
@@ -573,7 +574,7 @@ func TestBootstrapDownloadRootHappy(t *testing.T) {
 }
 
 func TestUpdateDownloadRootHappy(t *testing.T) {
-	repo, _, err := testutils.EmptyRepo("docker.com/notary")
+	repo, _, err := repoutils.EmptyRepo("docker.com/notary")
 	require.NoError(t, err)
 	localStorage := store.NewMemoryStore(nil)
 	remoteStorage := store.NewMemoryStore(nil)
@@ -597,7 +598,7 @@ func TestUpdateDownloadRootHappy(t *testing.T) {
 func TestUpdateDownloadRootBadChecksum(t *testing.T) {
 	remoteStore := testutils.NewCorruptingMemoryStore(nil)
 
-	repo, _, err := testutils.EmptyRepo("docker.com/notary")
+	repo, _, err := repoutils.EmptyRepo("docker.com/notary")
 	require.NoError(t, err)
 	localStorage := store.NewMemoryStore(nil)
 	client := NewClient(repo, remoteStore, localStorage)
@@ -620,7 +621,7 @@ func TestUpdateDownloadRootBadChecksum(t *testing.T) {
 
 func TestUpdateDownloadRootChecksumNotFound(t *testing.T) {
 	remoteStore := store.NewMemoryStore(nil)
-	repo, _, err := testutils.EmptyRepo("docker.com/notary")
+	repo, _, err := repoutils.EmptyRepo("docker.com/notary")
 	require.NoError(t, err)
 	localStorage := store.NewMemoryStore(nil)
 	client := NewClient(repo, remoteStore, localStorage)
@@ -644,7 +645,7 @@ func TestUpdateDownloadRootChecksumNotFound(t *testing.T) {
 }
 
 func TestDownloadTimestampHappy(t *testing.T) {
-	repo, _, err := testutils.EmptyRepo("docker.com/notary")
+	repo, _, err := repoutils.EmptyRepo("docker.com/notary")
 	require.NoError(t, err)
 	localStorage := store.NewMemoryStore(nil)
 	remoteStorage := store.NewMemoryStore(nil)
@@ -663,7 +664,7 @@ func TestDownloadTimestampHappy(t *testing.T) {
 }
 
 func TestDownloadSnapshotHappy(t *testing.T) {
-	repo, _, err := testutils.EmptyRepo("docker.com/notary")
+	repo, _, err := repoutils.EmptyRepo("docker.com/notary")
 	require.NoError(t, err)
 	localStorage := store.NewMemoryStore(nil)
 	remoteStorage := store.NewMemoryStore(nil)
@@ -695,7 +696,7 @@ func TestDownloadSnapshotLarge(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping test in short mode")
 	}
-	repo, _, err := testutils.EmptyRepo("docker.com/notary")
+	repo, _, err := repoutils.EmptyRepo("docker.com/notary")
 	require.NoError(t, err)
 	localStorage := store.NewMemoryStore(nil)
 	remoteStorage := store.NewMemoryStore(nil)
@@ -732,7 +733,7 @@ func TestDownloadSnapshotLarge(t *testing.T) {
 }
 
 func TestDownloadSnapshotNoTimestamp(t *testing.T) {
-	repo, _, err := testutils.EmptyRepo("docker.com/notary")
+	repo, _, err := repoutils.EmptyRepo("docker.com/notary")
 	require.NoError(t, err)
 	localStorage := store.NewMemoryStore(nil)
 	remoteStorage := store.NewMemoryStore(nil)
@@ -755,7 +756,7 @@ func TestDownloadSnapshotNoTimestamp(t *testing.T) {
 // TestDownloadSnapshotNoChecksum: It should never be valid to download a
 // snapshot if we don't have a checksum
 func TestDownloadSnapshotNoChecksum(t *testing.T) {
-	repo, _, err := testutils.EmptyRepo("docker.com/notary")
+	repo, _, err := repoutils.EmptyRepo("docker.com/notary")
 	require.NoError(t, err)
 	localStorage := store.NewMemoryStore(nil)
 	remoteStorage := store.NewMemoryStore(nil)
@@ -777,7 +778,7 @@ func TestDownloadSnapshotNoChecksum(t *testing.T) {
 }
 
 func TestDownloadSnapshotChecksumNotFound(t *testing.T) {
-	repo, _, err := testutils.EmptyRepo("docker.com/notary")
+	repo, _, err := repoutils.EmptyRepo("docker.com/notary")
 	require.NoError(t, err)
 	localStorage := store.NewMemoryStore(nil)
 	remoteStorage := store.NewMemoryStore(nil)
@@ -804,7 +805,7 @@ func TestDownloadSnapshotChecksumNotFound(t *testing.T) {
 // If there is no local cache and also no remote timestamp, downloading the timestamp
 // fails with a store.ErrMetaNotFound
 func TestDownloadTimestampNoTimestamps(t *testing.T) {
-	repo, _, err := testutils.EmptyRepo("docker.com/notary")
+	repo, _, err := repoutils.EmptyRepo("docker.com/notary")
 	require.NoError(t, err)
 	localStorage := store.NewMemoryStore(nil)
 	remoteStorage := store.NewMemoryStore(nil)
@@ -820,7 +821,7 @@ func TestDownloadTimestampNoTimestamps(t *testing.T) {
 // If there is no local cache and the remote timestamp is empty, downloading the timestamp
 // fails with a store.ErrMetaNotFound
 func TestDownloadTimestampNoLocalTimestampRemoteTimestampEmpty(t *testing.T) {
-	repo, _, err := testutils.EmptyRepo("docker.com/notary")
+	repo, _, err := repoutils.EmptyRepo("docker.com/notary")
 	require.NoError(t, err)
 	localStorage := store.NewMemoryStore(nil)
 	remoteStorage := store.NewMemoryStore(map[string][]byte{data.CanonicalTimestampRole: {}})
@@ -834,7 +835,7 @@ func TestDownloadTimestampNoLocalTimestampRemoteTimestampEmpty(t *testing.T) {
 // If there is no local cache and the remote timestamp is invalid, downloading the timestamp
 // fails with a store.ErrMetaNotFound
 func TestDownloadTimestampNoLocalTimestampRemoteTimestampInvalid(t *testing.T) {
-	repo, _, err := testutils.EmptyRepo("docker.com/notary")
+	repo, _, err := repoutils.EmptyRepo("docker.com/notary")
 	require.NoError(t, err)
 	localStorage := store.NewMemoryStore(nil)
 
@@ -854,7 +855,7 @@ func TestDownloadTimestampNoLocalTimestampRemoteTimestampInvalid(t *testing.T) {
 
 // If there is is a local cache and no remote timestamp, we fall back on the cached timestamp
 func TestDownloadTimestampLocalTimestampNoRemoteTimestamp(t *testing.T) {
-	repo, _, err := testutils.EmptyRepo("docker.com/notary")
+	repo, _, err := repoutils.EmptyRepo("docker.com/notary")
 	require.NoError(t, err)
 
 	// add a timestamp to the local cache
@@ -873,7 +874,7 @@ func TestDownloadTimestampLocalTimestampNoRemoteTimestamp(t *testing.T) {
 
 // If there is is a local cache and the remote timestamp is invalid, we fall back on the cached timestamp
 func TestDownloadTimestampLocalTimestampInvalidRemoteTimestamp(t *testing.T) {
-	repo, _, err := testutils.EmptyRepo("docker.com/notary")
+	repo, _, err := repoutils.EmptyRepo("docker.com/notary")
 	require.NoError(t, err)
 
 	// add a timestamp to the local cache

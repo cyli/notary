@@ -14,7 +14,7 @@ import (
 	"github.com/docker/notary/tuf"
 	"github.com/docker/notary/tuf/data"
 	"github.com/docker/notary/tuf/signed"
-	"github.com/docker/notary/tuf/testutils"
+	"github.com/docker/notary/tuf/testutils/repoutils"
 	"github.com/docker/notary/tuf/validation"
 	"github.com/stretchr/testify/require"
 )
@@ -61,7 +61,7 @@ func copyKeys(t *testing.T, from signed.CryptoService, roles ...string) signed.C
 func getUpdates(r, tg, sn, ts *data.Signed) (
 	root, targets, snapshot, timestamp storage.MetaUpdate, err error) {
 
-	rs, tgs, sns, tss, err := testutils.Serialize(r, tg, sn, ts)
+	rs, tgs, sns, tss, err := repoutils.Serialize(r, tg, sn, ts)
 	if err != nil {
 		return
 	}
@@ -90,11 +90,11 @@ func getUpdates(r, tg, sn, ts *data.Signed) (
 }
 
 func TestValidateEmptyNew(t *testing.T) {
-	repo, cs, err := testutils.EmptyRepo("docker.com/notary")
+	repo, cs, err := repoutils.EmptyRepo("docker.com/notary")
 	require.NoError(t, err)
 	store := storage.NewMemStorage()
 
-	r, tg, sn, ts, err := testutils.Sign(repo)
+	r, tg, sn, ts, err := repoutils.Sign(repo)
 	require.NoError(t, err)
 	root, targets, snapshot, timestamp, err := getUpdates(r, tg, sn, ts)
 	require.NoError(t, err)
@@ -128,10 +128,10 @@ func TestValidateEmptyNew(t *testing.T) {
 }
 
 func TestValidatePrevTimestamp(t *testing.T) {
-	repo, cs, err := testutils.EmptyRepo("docker.com/notary")
+	repo, cs, err := repoutils.EmptyRepo("docker.com/notary")
 	require.NoError(t, err)
 
-	r, tg, sn, ts, err := testutils.Sign(repo)
+	r, tg, sn, ts, err := repoutils.Sign(repo)
 	require.NoError(t, err)
 	root, targets, snapshot, timestamp, err := getUpdates(r, tg, sn, ts)
 	require.NoError(t, err)
@@ -161,10 +161,10 @@ func TestValidatePrevTimestamp(t *testing.T) {
 }
 
 func TestValidatePreviousTimestampCorrupt(t *testing.T) {
-	repo, cs, err := testutils.EmptyRepo("docker.com/notary")
+	repo, cs, err := repoutils.EmptyRepo("docker.com/notary")
 	require.NoError(t, err)
 
-	r, tg, sn, ts, err := testutils.Sign(repo)
+	r, tg, sn, ts, err := repoutils.Sign(repo)
 	require.NoError(t, err)
 	root, targets, snapshot, timestamp, err := getUpdates(r, tg, sn, ts)
 	require.NoError(t, err)
@@ -183,10 +183,10 @@ func TestValidatePreviousTimestampCorrupt(t *testing.T) {
 }
 
 func TestValidateGetCurrentTimestampBroken(t *testing.T) {
-	repo, cs, err := testutils.EmptyRepo("docker.com/notary")
+	repo, cs, err := repoutils.EmptyRepo("docker.com/notary")
 	require.NoError(t, err)
 
-	r, tg, sn, ts, err := testutils.Sign(repo)
+	r, tg, sn, ts, err := repoutils.Sign(repo)
 	require.NoError(t, err)
 	root, targets, snapshot, _, err := getUpdates(r, tg, sn, ts)
 	require.NoError(t, err)
@@ -205,11 +205,11 @@ func TestValidateGetCurrentTimestampBroken(t *testing.T) {
 }
 
 func TestValidateNoNewRoot(t *testing.T) {
-	repo, cs, err := testutils.EmptyRepo("docker.com/notary")
+	repo, cs, err := repoutils.EmptyRepo("docker.com/notary")
 	require.NoError(t, err)
 	store := storage.NewMemStorage()
 
-	r, tg, sn, ts, err := testutils.Sign(repo)
+	r, tg, sn, ts, err := repoutils.Sign(repo)
 	require.NoError(t, err)
 	root, targets, snapshot, timestamp, err := getUpdates(r, tg, sn, ts)
 	require.NoError(t, err)
@@ -223,11 +223,11 @@ func TestValidateNoNewRoot(t *testing.T) {
 }
 
 func TestValidateNoNewTargets(t *testing.T) {
-	repo, cs, err := testutils.EmptyRepo("docker.com/notary")
+	repo, cs, err := repoutils.EmptyRepo("docker.com/notary")
 	require.NoError(t, err)
 	store := storage.NewMemStorage()
 
-	r, tg, sn, ts, err := testutils.Sign(repo)
+	r, tg, sn, ts, err := repoutils.Sign(repo)
 	require.NoError(t, err)
 	root, targets, snapshot, timestamp, err := getUpdates(r, tg, sn, ts)
 	require.NoError(t, err)
@@ -241,11 +241,11 @@ func TestValidateNoNewTargets(t *testing.T) {
 }
 
 func TestValidateOnlySnapshot(t *testing.T) {
-	repo, cs, err := testutils.EmptyRepo("docker.com/notary")
+	repo, cs, err := repoutils.EmptyRepo("docker.com/notary")
 	require.NoError(t, err)
 	store := storage.NewMemStorage()
 
-	r, tg, sn, ts, err := testutils.Sign(repo)
+	r, tg, sn, ts, err := repoutils.Sign(repo)
 	require.NoError(t, err)
 	root, targets, snapshot, _, err := getUpdates(r, tg, sn, ts)
 	require.NoError(t, err)
@@ -261,11 +261,11 @@ func TestValidateOnlySnapshot(t *testing.T) {
 }
 
 func TestValidateOldRoot(t *testing.T) {
-	repo, cs, err := testutils.EmptyRepo("docker.com/notary")
+	repo, cs, err := repoutils.EmptyRepo("docker.com/notary")
 	require.NoError(t, err)
 	store := storage.NewMemStorage()
 
-	r, tg, sn, ts, err := testutils.Sign(repo)
+	r, tg, sn, ts, err := repoutils.Sign(repo)
 	require.NoError(t, err)
 	root, targets, snapshot, timestamp, err := getUpdates(r, tg, sn, ts)
 	require.NoError(t, err)
@@ -279,11 +279,11 @@ func TestValidateOldRoot(t *testing.T) {
 }
 
 func TestValidateOldRootCorrupt(t *testing.T) {
-	repo, cs, err := testutils.EmptyRepo("docker.com/notary")
+	repo, cs, err := repoutils.EmptyRepo("docker.com/notary")
 	require.NoError(t, err)
 	store := storage.NewMemStorage()
 
-	r, tg, sn, ts, err := testutils.Sign(repo)
+	r, tg, sn, ts, err := repoutils.Sign(repo)
 	require.NoError(t, err)
 	root, targets, snapshot, timestamp, err := getUpdates(r, tg, sn, ts)
 	require.NoError(t, err)
@@ -305,11 +305,11 @@ func TestValidateOldRootCorrupt(t *testing.T) {
 // We cannot validate a new root if the old root is corrupt, because there might
 // have been a root key rotation.
 func TestValidateOldRootCorruptRootRole(t *testing.T) {
-	repo, cs, err := testutils.EmptyRepo("docker.com/notary")
+	repo, cs, err := repoutils.EmptyRepo("docker.com/notary")
 	require.NoError(t, err)
 	store := storage.NewMemStorage()
 
-	r, tg, sn, ts, err := testutils.Sign(repo)
+	r, tg, sn, ts, err := repoutils.Sign(repo)
 	require.NoError(t, err)
 	root, targets, snapshot, timestamp, err := getUpdates(r, tg, sn, ts)
 	require.NoError(t, err)
@@ -339,14 +339,14 @@ func TestValidateOldRootCorruptRootRole(t *testing.T) {
 // have been an old root and we can't determine if the new root represents a
 // root key rotation.
 func TestValidateRootGetCurrentRootBroken(t *testing.T) {
-	repo, cs, err := testutils.EmptyRepo("docker.com/notary")
+	repo, cs, err := repoutils.EmptyRepo("docker.com/notary")
 	require.NoError(t, err)
 	store := getFailStore{
 		MetaStore:    storage.NewMemStorage(),
 		errsToReturn: map[string]error{data.CanonicalRootRole: data.ErrNoSuchRole{}},
 	}
 
-	r, tg, sn, ts, err := testutils.Sign(repo)
+	r, tg, sn, ts, err := repoutils.Sign(repo)
 	require.NoError(t, err)
 	root, targets, snapshot, timestamp, err := getUpdates(r, tg, sn, ts)
 	require.NoError(t, err)
@@ -361,11 +361,11 @@ func TestValidateRootGetCurrentRootBroken(t *testing.T) {
 
 // A valid root rotation requires that the new root be signed with both old and new keys.
 func TestValidateRootRotation(t *testing.T) {
-	repo, crypto, err := testutils.EmptyRepo("docker.com/notary")
+	repo, crypto, err := repoutils.EmptyRepo("docker.com/notary")
 	require.NoError(t, err)
 	store := storage.NewMemStorage()
 
-	r, tg, sn, ts, err := testutils.Sign(repo)
+	r, tg, sn, ts, err := repoutils.Sign(repo)
 	require.NoError(t, err)
 	root, targets, snapshot, timestamp, err := getUpdates(r, tg, sn, ts)
 	require.NoError(t, err)
@@ -409,11 +409,11 @@ func TestValidateRootRotation(t *testing.T) {
 // A root rotation must be signed with old and new root keys, otherwise the
 // new root fails to validate
 func TestRootRotationNotSignedWithOldKeys(t *testing.T) {
-	repo, crypto, err := testutils.EmptyRepo("docker.com/notary")
+	repo, crypto, err := repoutils.EmptyRepo("docker.com/notary")
 	require.NoError(t, err)
 	store := storage.NewMemStorage()
 
-	r, tg, sn, ts, err := testutils.Sign(repo)
+	r, tg, sn, ts, err := repoutils.Sign(repo)
 	require.NoError(t, err)
 	root, targets, snapshot, timestamp, err := getUpdates(r, tg, sn, ts)
 	require.NoError(t, err)
@@ -452,11 +452,11 @@ func TestRootRotationNotSignedWithOldKeys(t *testing.T) {
 
 // An update is not valid without the root metadata.
 func TestValidateNoRoot(t *testing.T) {
-	repo, cs, err := testutils.EmptyRepo("docker.com/notary")
+	repo, cs, err := repoutils.EmptyRepo("docker.com/notary")
 	require.NoError(t, err)
 	store := storage.NewMemStorage()
 
-	r, tg, sn, ts, err := testutils.Sign(repo)
+	r, tg, sn, ts, err := repoutils.Sign(repo)
 	require.NoError(t, err)
 	_, targets, snapshot, timestamp, err := getUpdates(r, tg, sn, ts)
 	require.NoError(t, err)
@@ -470,11 +470,11 @@ func TestValidateNoRoot(t *testing.T) {
 }
 
 func TestValidateSnapshotMissingNoSnapshotKey(t *testing.T) {
-	repo, cs, err := testutils.EmptyRepo("docker.com/notary")
+	repo, cs, err := repoutils.EmptyRepo("docker.com/notary")
 	require.NoError(t, err)
 	store := storage.NewMemStorage()
 
-	r, tg, sn, ts, err := testutils.Sign(repo)
+	r, tg, sn, ts, err := repoutils.Sign(repo)
 	require.NoError(t, err)
 	root, targets, _, _, err := getUpdates(r, tg, sn, ts)
 	require.NoError(t, err)
@@ -488,7 +488,7 @@ func TestValidateSnapshotMissingNoSnapshotKey(t *testing.T) {
 }
 
 func TestValidateSnapshotGenerateNoPrev(t *testing.T) {
-	repo, cs, err := testutils.EmptyRepo("docker.com/notary")
+	repo, cs, err := repoutils.EmptyRepo("docker.com/notary")
 	require.NoError(t, err)
 	store := storage.NewMemStorage()
 	snapRole, err := repo.GetBaseRole(data.CanonicalSnapshotRole)
@@ -499,7 +499,7 @@ func TestValidateSnapshotGenerateNoPrev(t *testing.T) {
 		require.NoError(t, err)
 	}
 
-	r, tg, sn, ts, err := testutils.Sign(repo)
+	r, tg, sn, ts, err := repoutils.Sign(repo)
 	require.NoError(t, err)
 	root, targets, _, _, err := getUpdates(r, tg, sn, ts)
 	require.NoError(t, err)
@@ -512,7 +512,7 @@ func TestValidateSnapshotGenerateNoPrev(t *testing.T) {
 }
 
 func TestValidateSnapshotGenerateWithPrev(t *testing.T) {
-	repo, cs, err := testutils.EmptyRepo("docker.com/notary")
+	repo, cs, err := repoutils.EmptyRepo("docker.com/notary")
 	require.NoError(t, err)
 	store := storage.NewMemStorage()
 	snapRole, err := repo.GetBaseRole(data.CanonicalSnapshotRole)
@@ -523,7 +523,7 @@ func TestValidateSnapshotGenerateWithPrev(t *testing.T) {
 		require.NoError(t, err)
 	}
 
-	r, tg, sn, ts, err := testutils.Sign(repo)
+	r, tg, sn, ts, err := repoutils.Sign(repo)
 	require.NoError(t, err)
 	root, targets, snapshot, _, err := getUpdates(r, tg, sn, ts)
 	require.NoError(t, err)
@@ -552,7 +552,7 @@ func TestValidateSnapshotGenerateWithPrev(t *testing.T) {
 }
 
 func TestValidateSnapshotGeneratePrevCorrupt(t *testing.T) {
-	repo, cs, err := testutils.EmptyRepo("docker.com/notary")
+	repo, cs, err := repoutils.EmptyRepo("docker.com/notary")
 	require.NoError(t, err)
 	store := storage.NewMemStorage()
 	snapRole, err := repo.GetBaseRole(data.CanonicalSnapshotRole)
@@ -563,7 +563,7 @@ func TestValidateSnapshotGeneratePrevCorrupt(t *testing.T) {
 		require.NoError(t, err)
 	}
 
-	r, tg, sn, ts, err := testutils.Sign(repo)
+	r, tg, sn, ts, err := repoutils.Sign(repo)
 	require.NoError(t, err)
 	root, targets, snapshot, _, err := getUpdates(r, tg, sn, ts)
 	require.NoError(t, err)
@@ -584,7 +584,7 @@ func TestValidateSnapshotGeneratePrevCorrupt(t *testing.T) {
 
 // Store is broken when getting the current snapshot
 func TestValidateSnapshotGenerateStoreGetCurrentSnapshotBroken(t *testing.T) {
-	repo, cs, err := testutils.EmptyRepo("docker.com/notary")
+	repo, cs, err := repoutils.EmptyRepo("docker.com/notary")
 	require.NoError(t, err)
 	store := getFailStore{
 		MetaStore:    storage.NewMemStorage(),
@@ -598,7 +598,7 @@ func TestValidateSnapshotGenerateStoreGetCurrentSnapshotBroken(t *testing.T) {
 		require.NoError(t, err)
 	}
 
-	r, tg, sn, ts, err := testutils.Sign(repo)
+	r, tg, sn, ts, err := repoutils.Sign(repo)
 	require.NoError(t, err)
 	root, targets, _, _, err := getUpdates(r, tg, sn, ts)
 	require.NoError(t, err)
@@ -612,7 +612,7 @@ func TestValidateSnapshotGenerateStoreGetCurrentSnapshotBroken(t *testing.T) {
 }
 
 func TestValidateSnapshotGenerateNoTargets(t *testing.T) {
-	repo, cs, err := testutils.EmptyRepo("docker.com/notary")
+	repo, cs, err := repoutils.EmptyRepo("docker.com/notary")
 	require.NoError(t, err)
 	store := storage.NewMemStorage()
 	snapRole, err := repo.GetBaseRole(data.CanonicalSnapshotRole)
@@ -623,7 +623,7 @@ func TestValidateSnapshotGenerateNoTargets(t *testing.T) {
 		require.NoError(t, err)
 	}
 
-	r, tg, sn, ts, err := testutils.Sign(repo)
+	r, tg, sn, ts, err := repoutils.Sign(repo)
 	require.NoError(t, err)
 	root, _, _, _, err := getUpdates(r, tg, sn, ts)
 	require.NoError(t, err)
@@ -636,7 +636,7 @@ func TestValidateSnapshotGenerateNoTargets(t *testing.T) {
 }
 
 func TestValidateSnapshotGenerate(t *testing.T) {
-	repo, cs, err := testutils.EmptyRepo("docker.com/notary")
+	repo, cs, err := repoutils.EmptyRepo("docker.com/notary")
 	require.NoError(t, err)
 	store := storage.NewMemStorage()
 	snapRole, err := repo.GetBaseRole(data.CanonicalSnapshotRole)
@@ -647,7 +647,7 @@ func TestValidateSnapshotGenerate(t *testing.T) {
 		require.NoError(t, err)
 	}
 
-	r, tg, sn, ts, err := testutils.Sign(repo)
+	r, tg, sn, ts, err := repoutils.Sign(repo)
 	require.NoError(t, err)
 	root, targets, _, _, err := getUpdates(r, tg, sn, ts)
 	require.NoError(t, err)
@@ -665,10 +665,10 @@ func TestValidateSnapshotGenerate(t *testing.T) {
 // happen if pushing an existing repository from one server to another that
 // does not have the repo.
 func TestValidateRootNoTimestampKey(t *testing.T) {
-	oldRepo, _, err := testutils.EmptyRepo("docker.com/notary")
+	oldRepo, _, err := repoutils.EmptyRepo("docker.com/notary")
 	require.NoError(t, err)
 
-	r, tg, sn, ts, err := testutils.Sign(oldRepo)
+	r, tg, sn, ts, err := repoutils.Sign(oldRepo)
 	require.NoError(t, err)
 	root, targets, snapshot, _, err := getUpdates(r, tg, sn, ts)
 	require.NoError(t, err)
@@ -692,10 +692,10 @@ func TestValidateRootNoTimestampKey(t *testing.T) {
 // repository from one server to another that had already initialized the same
 // repo.
 func TestValidateRootInvalidTimestampKey(t *testing.T) {
-	oldRepo, _, err := testutils.EmptyRepo("docker.com/notary")
+	oldRepo, _, err := repoutils.EmptyRepo("docker.com/notary")
 	require.NoError(t, err)
 
-	r, tg, sn, ts, err := testutils.Sign(oldRepo)
+	r, tg, sn, ts, err := repoutils.Sign(oldRepo)
 	require.NoError(t, err)
 	root, targets, snapshot, _, err := getUpdates(r, tg, sn, ts)
 	require.NoError(t, err)
@@ -714,7 +714,7 @@ func TestValidateRootInvalidTimestampKey(t *testing.T) {
 
 // If the timestamp role has a threshold > 1, validation fails.
 func TestValidateRootInvalidTimestampThreshold(t *testing.T) {
-	oldRepo, cs, err := testutils.EmptyRepo("docker.com/notary")
+	oldRepo, cs, err := repoutils.EmptyRepo("docker.com/notary")
 	require.NoError(t, err)
 
 	tsKey2, err := cs.Create("timestamp2", "", data.ED25519Key)
@@ -724,7 +724,7 @@ func TestValidateRootInvalidTimestampThreshold(t *testing.T) {
 	require.True(t, ok)
 	tsRole.Threshold = 2
 
-	r, tg, sn, ts, err := testutils.Sign(oldRepo)
+	r, tg, sn, ts, err := repoutils.Sign(oldRepo)
 	require.NoError(t, err)
 	root, targets, snapshot, _, err := getUpdates(r, tg, sn, ts)
 	require.NoError(t, err)
@@ -741,13 +741,13 @@ func TestValidateRootInvalidTimestampThreshold(t *testing.T) {
 // If any role has a threshold < 1, validation fails
 func TestValidateRootInvalidZeroThreshold(t *testing.T) {
 	for _, role := range data.BaseRoles {
-		oldRepo, cs, err := testutils.EmptyRepo("docker.com/notary")
+		oldRepo, cs, err := repoutils.EmptyRepo("docker.com/notary")
 		require.NoError(t, err)
 		tsRole, ok := oldRepo.Root.Signed.Roles[role]
 		require.True(t, ok)
 		tsRole.Threshold = 0
 
-		r, tg, sn, ts, err := testutils.Sign(oldRepo)
+		r, tg, sn, ts, err := repoutils.Sign(oldRepo)
 		require.NoError(t, err)
 		root, targets, snapshot, _, err := getUpdates(r, tg, sn, ts)
 		require.NoError(t, err)
@@ -766,13 +766,13 @@ func TestValidateRootInvalidZeroThreshold(t *testing.T) {
 // These tests remove a role from the Root file and
 // check for a validation.ErrBadRoot
 func TestValidateRootRoleMissing(t *testing.T) {
-	repo, cs, err := testutils.EmptyRepo("docker.com/notary")
+	repo, cs, err := repoutils.EmptyRepo("docker.com/notary")
 	require.NoError(t, err)
 	store := storage.NewMemStorage()
 
 	delete(repo.Root.Signed.Roles, "root")
 
-	r, tg, sn, ts, err := testutils.Sign(repo)
+	r, tg, sn, ts, err := repoutils.Sign(repo)
 	require.NoError(t, err)
 	root, targets, snapshot, timestamp, err := getUpdates(r, tg, sn, ts)
 	require.NoError(t, err)
@@ -786,13 +786,13 @@ func TestValidateRootRoleMissing(t *testing.T) {
 }
 
 func TestValidateTargetsRoleMissing(t *testing.T) {
-	repo, cs, err := testutils.EmptyRepo("docker.com/notary")
+	repo, cs, err := repoutils.EmptyRepo("docker.com/notary")
 	require.NoError(t, err)
 	store := storage.NewMemStorage()
 
 	delete(repo.Root.Signed.Roles, "targets")
 
-	r, tg, sn, ts, err := testutils.Sign(repo)
+	r, tg, sn, ts, err := repoutils.Sign(repo)
 	require.NoError(t, err)
 	root, targets, snapshot, timestamp, err := getUpdates(r, tg, sn, ts)
 	require.NoError(t, err)
@@ -806,13 +806,13 @@ func TestValidateTargetsRoleMissing(t *testing.T) {
 }
 
 func TestValidateSnapshotRoleMissing(t *testing.T) {
-	repo, cs, err := testutils.EmptyRepo("docker.com/notary")
+	repo, cs, err := repoutils.EmptyRepo("docker.com/notary")
 	require.NoError(t, err)
 	store := storage.NewMemStorage()
 
 	delete(repo.Root.Signed.Roles, "snapshot")
 
-	r, tg, sn, ts, err := testutils.Sign(repo)
+	r, tg, sn, ts, err := repoutils.Sign(repo)
 	require.NoError(t, err)
 	root, targets, snapshot, timestamp, err := getUpdates(r, tg, sn, ts)
 	require.NoError(t, err)
@@ -829,13 +829,13 @@ func TestValidateSnapshotRoleMissing(t *testing.T) {
 
 // ### Signature missing negative tests ###
 func TestValidateRootSigMissing(t *testing.T) {
-	repo, cs, err := testutils.EmptyRepo("docker.com/notary")
+	repo, cs, err := repoutils.EmptyRepo("docker.com/notary")
 	require.NoError(t, err)
 	store := storage.NewMemStorage()
 
 	delete(repo.Root.Signed.Roles, "snapshot")
 
-	r, tg, sn, ts, err := testutils.Sign(repo)
+	r, tg, sn, ts, err := repoutils.Sign(repo)
 	require.NoError(t, err)
 
 	r.Signatures = nil
@@ -852,11 +852,11 @@ func TestValidateRootSigMissing(t *testing.T) {
 }
 
 func TestValidateTargetsSigMissing(t *testing.T) {
-	repo, cs, err := testutils.EmptyRepo("docker.com/notary")
+	repo, cs, err := repoutils.EmptyRepo("docker.com/notary")
 	require.NoError(t, err)
 	store := storage.NewMemStorage()
 
-	r, tg, sn, ts, err := testutils.Sign(repo)
+	r, tg, sn, ts, err := repoutils.Sign(repo)
 	require.NoError(t, err)
 
 	tg.Signatures = nil
@@ -873,11 +873,11 @@ func TestValidateTargetsSigMissing(t *testing.T) {
 }
 
 func TestValidateSnapshotSigMissing(t *testing.T) {
-	repo, cs, err := testutils.EmptyRepo("docker.com/notary")
+	repo, cs, err := repoutils.EmptyRepo("docker.com/notary")
 	require.NoError(t, err)
 	store := storage.NewMemStorage()
 
-	r, tg, sn, ts, err := testutils.Sign(repo)
+	r, tg, sn, ts, err := repoutils.Sign(repo)
 	require.NoError(t, err)
 
 	sn.Signatures = nil
@@ -897,11 +897,11 @@ func TestValidateSnapshotSigMissing(t *testing.T) {
 
 // ### Corrupted metadata negative tests ###
 func TestValidateRootCorrupt(t *testing.T) {
-	repo, cs, err := testutils.EmptyRepo("docker.com/notary")
+	repo, cs, err := repoutils.EmptyRepo("docker.com/notary")
 	require.NoError(t, err)
 	store := storage.NewMemStorage()
 
-	r, tg, sn, ts, err := testutils.Sign(repo)
+	r, tg, sn, ts, err := repoutils.Sign(repo)
 	require.NoError(t, err)
 	root, targets, snapshot, timestamp, err := getUpdates(r, tg, sn, ts)
 	require.NoError(t, err)
@@ -918,11 +918,11 @@ func TestValidateRootCorrupt(t *testing.T) {
 }
 
 func TestValidateTargetsCorrupt(t *testing.T) {
-	repo, cs, err := testutils.EmptyRepo("docker.com/notary")
+	repo, cs, err := repoutils.EmptyRepo("docker.com/notary")
 	require.NoError(t, err)
 	store := storage.NewMemStorage()
 
-	r, tg, sn, ts, err := testutils.Sign(repo)
+	r, tg, sn, ts, err := repoutils.Sign(repo)
 	require.NoError(t, err)
 	root, targets, snapshot, timestamp, err := getUpdates(r, tg, sn, ts)
 	require.NoError(t, err)
@@ -939,11 +939,11 @@ func TestValidateTargetsCorrupt(t *testing.T) {
 }
 
 func TestValidateSnapshotCorrupt(t *testing.T) {
-	repo, cs, err := testutils.EmptyRepo("docker.com/notary")
+	repo, cs, err := repoutils.EmptyRepo("docker.com/notary")
 	require.NoError(t, err)
 	store := storage.NewMemStorage()
 
-	r, tg, sn, ts, err := testutils.Sign(repo)
+	r, tg, sn, ts, err := repoutils.Sign(repo)
 	require.NoError(t, err)
 	root, targets, snapshot, timestamp, err := getUpdates(r, tg, sn, ts)
 	require.NoError(t, err)
@@ -963,11 +963,11 @@ func TestValidateSnapshotCorrupt(t *testing.T) {
 
 // ### Snapshot size mismatch negative tests ###
 func TestValidateRootModifiedSize(t *testing.T) {
-	repo, cs, err := testutils.EmptyRepo("docker.com/notary")
+	repo, cs, err := repoutils.EmptyRepo("docker.com/notary")
 	require.NoError(t, err)
 	store := storage.NewMemStorage()
 
-	r, tg, sn, ts, err := testutils.Sign(repo)
+	r, tg, sn, ts, err := repoutils.Sign(repo)
 	require.NoError(t, err)
 
 	// add another copy of the signature so the hash is different
@@ -988,11 +988,11 @@ func TestValidateRootModifiedSize(t *testing.T) {
 }
 
 func TestValidateTargetsModifiedSize(t *testing.T) {
-	repo, cs, err := testutils.EmptyRepo("docker.com/notary")
+	repo, cs, err := repoutils.EmptyRepo("docker.com/notary")
 	require.NoError(t, err)
 	store := storage.NewMemStorage()
 
-	r, tg, sn, ts, err := testutils.Sign(repo)
+	r, tg, sn, ts, err := repoutils.Sign(repo)
 	require.NoError(t, err)
 
 	// add another copy of the signature so the hash is different
@@ -1013,11 +1013,11 @@ func TestValidateTargetsModifiedSize(t *testing.T) {
 
 // ### Snapshot hash mismatch negative tests ###
 func TestValidateRootModifiedHash(t *testing.T) {
-	repo, cs, err := testutils.EmptyRepo("docker.com/notary")
+	repo, cs, err := repoutils.EmptyRepo("docker.com/notary")
 	require.NoError(t, err)
 	store := storage.NewMemStorage()
 
-	r, tg, sn, ts, err := testutils.Sign(repo)
+	r, tg, sn, ts, err := repoutils.Sign(repo)
 	require.NoError(t, err)
 
 	snap, err := data.SnapshotFromSigned(sn)
@@ -1039,11 +1039,11 @@ func TestValidateRootModifiedHash(t *testing.T) {
 }
 
 func TestValidateTargetsModifiedHash(t *testing.T) {
-	repo, cs, err := testutils.EmptyRepo("docker.com/notary")
+	repo, cs, err := repoutils.EmptyRepo("docker.com/notary")
 	require.NoError(t, err)
 	store := storage.NewMemStorage()
 
-	r, tg, sn, ts, err := testutils.Sign(repo)
+	r, tg, sn, ts, err := repoutils.Sign(repo)
 	require.NoError(t, err)
 
 	snap, err := data.SnapshotFromSigned(sn)
@@ -1075,7 +1075,7 @@ func TestGenerateSnapshotRootNotLoaded(t *testing.T) {
 }
 
 func TestGenerateSnapshotNoKey(t *testing.T) {
-	repo, cs, err := testutils.EmptyRepo("docker.com/notary")
+	repo, cs, err := repoutils.EmptyRepo("docker.com/notary")
 	require.NoError(t, err)
 	store := storage.NewMemStorage()
 
@@ -1093,7 +1093,7 @@ func TestGenerateSnapshotNoKey(t *testing.T) {
 
 // ### Target validation with delegations tests
 func TestLoadTargetsFromStore(t *testing.T) {
-	repo, _, err := testutils.EmptyRepo("docker.com/notary")
+	repo, _, err := repoutils.EmptyRepo("docker.com/notary")
 	require.NoError(t, err)
 	store := storage.NewMemStorage()
 
@@ -1134,7 +1134,7 @@ func TestLoadTargetsFromStore(t *testing.T) {
 }
 
 func TestValidateTargetsLoadParent(t *testing.T) {
-	baseRepo, cs, err := testutils.EmptyRepo("docker.com/notary")
+	baseRepo, cs, err := repoutils.EmptyRepo("docker.com/notary")
 	require.NoError(t, err)
 	store := storage.NewMemStorage()
 
@@ -1185,7 +1185,7 @@ func TestValidateTargetsLoadParent(t *testing.T) {
 }
 
 func TestValidateTargetsParentInUpdate(t *testing.T) {
-	baseRepo, cs, err := testutils.EmptyRepo("docker.com/notary")
+	baseRepo, cs, err := repoutils.EmptyRepo("docker.com/notary")
 	require.NoError(t, err)
 	store := storage.NewMemStorage()
 
@@ -1243,7 +1243,7 @@ func TestValidateTargetsParentInUpdate(t *testing.T) {
 }
 
 func TestValidateTargetsParentNotFound(t *testing.T) {
-	baseRepo, cs, err := testutils.EmptyRepo("docker.com/notary")
+	baseRepo, cs, err := repoutils.EmptyRepo("docker.com/notary")
 	require.NoError(t, err)
 	store := storage.NewMemStorage()
 
@@ -1281,7 +1281,7 @@ func TestValidateTargetsParentNotFound(t *testing.T) {
 }
 
 func TestValidateTargetsRoleNotInParent(t *testing.T) {
-	baseRepo, cs, err := testutils.EmptyRepo("docker.com/notary")
+	baseRepo, cs, err := repoutils.EmptyRepo("docker.com/notary")
 	require.NoError(t, err)
 	store := storage.NewMemStorage()
 

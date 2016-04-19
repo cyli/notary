@@ -8,7 +8,7 @@ import (
 	"github.com/docker/go/canonical/json"
 	"github.com/docker/notary/tuf/data"
 	"github.com/docker/notary/tuf/signed"
-	"github.com/docker/notary/tuf/testutils"
+	"github.com/docker/notary/tuf/testutils/repoutils"
 	"github.com/stretchr/testify/require"
 
 	"github.com/docker/notary/server/storage"
@@ -53,7 +53,7 @@ func TestGetTimestampKey(t *testing.T) {
 // If there is no previous timestamp or the previous timestamp is corrupt, then
 // even if everything else is in place, getting the timestamp fails
 func TestGetTimestampNoPreviousTimestamp(t *testing.T) {
-	repo, crypto, err := testutils.EmptyRepo("gun")
+	repo, crypto, err := repoutils.EmptyRepo("gun")
 	require.NoError(t, err)
 
 	rootJSON, err := json.Marshal(repo.Root)
@@ -95,7 +95,7 @@ func TestGetTimestampNoPreviousTimestamp(t *testing.T) {
 // load any other metadata that it doesn't need, like root)
 func TestGetTimestampReturnsPreviousTimestampIfUnexpired(t *testing.T) {
 	store := storage.NewMemStorage()
-	repo, crypto, err := testutils.EmptyRepo("gun")
+	repo, crypto, err := repoutils.EmptyRepo("gun")
 	require.NoError(t, err)
 
 	snapJSON, err := json.Marshal(repo.Snapshot)
@@ -115,7 +115,7 @@ func TestGetTimestampReturnsPreviousTimestampIfUnexpired(t *testing.T) {
 
 func TestGetTimestampOldTimestampExpired(t *testing.T) {
 	store := storage.NewMemStorage()
-	repo, crypto, err := testutils.EmptyRepo("gun")
+	repo, crypto, err := repoutils.EmptyRepo("gun")
 	require.NoError(t, err)
 
 	rootJSON, err := json.Marshal(repo.Root)
@@ -154,7 +154,7 @@ func TestGetTimestampOldTimestampExpired(t *testing.T) {
 // is re-signed.
 func TestGetTimestampIfNewSnapshot(t *testing.T) {
 	store := storage.NewMemStorage()
-	repo, crypto, err := testutils.EmptyRepo("gun")
+	repo, crypto, err := repoutils.EmptyRepo("gun")
 
 	rootJSON, err := json.Marshal(repo.Root)
 	require.NoError(t, err)
@@ -188,7 +188,7 @@ func TestGetTimestampIfNewSnapshot(t *testing.T) {
 
 // If the root or snapshot is missing or corrupt, no timestamp can be generated
 func TestCannotMakeNewTimestampIfNoRootOrSnapshot(t *testing.T) {
-	repo, crypto, err := testutils.EmptyRepo("gun")
+	repo, crypto, err := repoutils.EmptyRepo("gun")
 	require.NoError(t, err)
 
 	rootJSON, err := json.Marshal(repo.Root)
@@ -232,7 +232,7 @@ func TestCannotMakeNewTimestampIfNoRootOrSnapshot(t *testing.T) {
 
 func TestCreateTimestampNoKeyInCrypto(t *testing.T) {
 	store := storage.NewMemStorage()
-	repo, _, err := testutils.EmptyRepo("gun")
+	repo, _, err := repoutils.EmptyRepo("gun")
 	require.NoError(t, err)
 
 	rootJSON, err := json.Marshal(repo.Root)

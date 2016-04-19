@@ -21,6 +21,7 @@ import (
 	"github.com/docker/notary/tuf/signed"
 	"github.com/docker/notary/tuf/store"
 	"github.com/docker/notary/tuf/testutils"
+	"github.com/docker/notary/tuf/testutils/repoutils"
 	"github.com/gorilla/mux"
 	"github.com/stretchr/testify/require"
 )
@@ -40,7 +41,7 @@ var metadataDelegations = []string{"targets/a", "targets/a/b", "targets/b", "tar
 var delegationsWithNonEmptyMetadata = []string{"targets/a", "targets/a/b", "targets/b"}
 
 func newServerSwizzler(t *testing.T) (map[string][]byte, *testutils.MetadataSwizzler) {
-	serverMeta, cs, err := testutils.NewRepoMetadata("docker.com/notary", metadataDelegations...)
+	serverMeta, cs, err := repoutils.NewRepoMetadata("docker.com/notary", metadataDelegations...)
 	require.NoError(t, err)
 
 	serverSwizzler := testutils.NewMetadataSwizzler("docker.com/notary", serverMeta, cs)
@@ -97,7 +98,7 @@ func TestUpdateSucceedsEvenIfCannotWriteNewRepo(t *testing.T) {
 		t.Skip("skipping test in short mode")
 	}
 
-	serverMeta, _, err := testutils.NewRepoMetadata("docker.com/notary", metadataDelegations...)
+	serverMeta, _, err := repoutils.NewRepoMetadata("docker.com/notary", metadataDelegations...)
 	require.NoError(t, err)
 
 	ts := readOnlyServer(t, store.NewMemoryStore(serverMeta), http.StatusNotFound, "docker.com/notary")
@@ -213,7 +214,7 @@ func TestUpdateReplacesCorruptOrMissingMetadata(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping test in short mode")
 	}
-	serverMeta, cs, err := testutils.NewRepoMetadata("docker.com/notary", metadataDelegations...)
+	serverMeta, cs, err := repoutils.NewRepoMetadata("docker.com/notary", metadataDelegations...)
 	require.NoError(t, err)
 
 	ts := readOnlyServer(t, store.NewMemoryStore(serverMeta), http.StatusNotFound, "docker.com/notary")
@@ -258,7 +259,7 @@ func TestUpdateFailsIfServerRootKeyChangedWithoutMultiSign(t *testing.T) {
 	}
 
 	serverMeta, serverSwizzler := newServerSwizzler(t)
-	origMeta := testutils.CopyRepoMetadata(serverMeta)
+	origMeta := testutils.CopyMetadataMap(serverMeta)
 
 	ts := readOnlyServer(t, serverSwizzler.MetadataCache, http.StatusNotFound, "docker.com/notary")
 	defer ts.Close()

@@ -1,7 +1,7 @@
 // make sure that the swizzler actually sort of works, so our tests that use it actually test what we
 // think
 
-package testutils
+package testutils_test
 
 import (
 	"bytes"
@@ -15,18 +15,20 @@ import (
 	"github.com/docker/notary/tuf/data"
 	"github.com/docker/notary/tuf/signed"
 	"github.com/docker/notary/tuf/store"
+	"github.com/docker/notary/tuf/testutils"
+	"github.com/docker/notary/tuf/testutils/repoutils"
 	"github.com/stretchr/testify/require"
 )
 
 // creates a new swizzler with 3 delegation targets (and only 2 metadata files
 // for those targets), and returns the swizzler along with a copy of the original
 // metadata
-func createNewSwizzler(t *testing.T) (*MetadataSwizzler, map[string][]byte) {
+func createNewSwizzler(t *testing.T) (*testutils.MetadataSwizzler, map[string][]byte) {
 	gun := "docker.com/notary"
-	m, cs, err := NewRepoMetadata(gun, "targets/a", "targets/a/b", "targets/a/b/c")
+	m, cs, err := repoutils.NewRepoMetadata(gun, "targets/a", "targets/a/b", "targets/a/b/c")
 	require.NoError(t, err)
 
-	return NewMetadataSwizzler(gun, m, cs), CopyRepoMetadata(m)
+	return testutils.NewMetadataSwizzler(gun, m, cs), testutils.CopyMetadataMap(m)
 }
 
 // A new swizzler should have metadata for all roles, and a snapshot of all roles
@@ -575,11 +577,11 @@ func TestMissingSigningKey(t *testing.T) {
 	}
 
 	// these are all the functions that require re-signing
-	require.IsType(t, ErrNoKeyForRole{}, f.OffsetMetadataVersion(data.CanonicalSnapshotRole, 1))
-	require.IsType(t, ErrNoKeyForRole{}, f.ExpireMetadata(data.CanonicalSnapshotRole))
-	require.IsType(t, ErrNoKeyForRole{}, f.SetThreshold(data.CanonicalSnapshotRole, 2))
-	require.IsType(t, ErrNoKeyForRole{}, f.UpdateSnapshotHashes())
-	require.IsType(t, ErrNoKeyForRole{}, f.UpdateTimestampHash())
+	require.IsType(t, testutils.ErrNoKeyForRole{}, f.OffsetMetadataVersion(data.CanonicalSnapshotRole, 1))
+	require.IsType(t, testutils.ErrNoKeyForRole{}, f.ExpireMetadata(data.CanonicalSnapshotRole))
+	require.IsType(t, testutils.ErrNoKeyForRole{}, f.SetThreshold(data.CanonicalSnapshotRole, 2))
+	require.IsType(t, testutils.ErrNoKeyForRole{}, f.UpdateSnapshotHashes())
+	require.IsType(t, testutils.ErrNoKeyForRole{}, f.UpdateTimestampHash())
 }
 
 // This mutates the root

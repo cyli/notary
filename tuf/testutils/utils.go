@@ -1,54 +1,45 @@
 package testutils
 
 import (
-	"database/sql"
-	"fmt"
-	"os"
+	"time"
 
+	"github.com/docker/notary/cryptoservice"
+	"github.com/docker/notary/trustmanager"
 	"github.com/docker/notary/tuf/data"
+	"github.com/docker/notary/tuf/signed"
 	// need to initialize sqlite for tests
 	_ "github.com/mattn/go-sqlite3"
 )
 
-var counter = 1
-
-// SampleMeta returns a static, fake (and invalid) FileMeta object
-func SampleMeta() data.FileMeta {
-	meta := data.FileMeta{
-		Length: 1,
-		Hashes: data.Hashes{
-			"sha256": []byte{0x01, 0x02},
-			"sha512": []byte{0x03, 0x04},
-		},
+// CreateKey creates a new key inside the cryptoservice for the given role and gun,
+// returning the public key.  If the role is a root role, create an x509 key.
+func CreateKey(cs signed.CryptoService, gun, role string) (data.PublicKey, error) {
+	key, err := cs.Create(role, gun, data.ECDSAKey)
+	if err != nil {
+		return nil, err
 	}
-	return meta
+	if role == data.CanonicalRootRole {
+		start := time.Now().AddDate(0, 0, -1)
+		privKey, _, err := cs.GetPrivateKey(key.ID())
+		if err != nil {
+			return nil, err
+		}
+		cert, err := cryptoservice.GenerateCertificate(
+			privKey, gun, start, start.AddDate(1, 0, 0),
+		)
+		if err != nil {
+			return nil, err
+		}
+		key = data.NewECDSAx509PublicKey(trustmanager.CertToPEM(cert))
+	}
+	return key, nil
 }
 
-// GetSqliteDB creates and initializes a sqlite db
-func GetSqliteDB() *sql.DB {
-	os.Mkdir("/tmp/sqlite", 0755)
-	conn, err := sql.Open("sqlite3", fmt.Sprintf("/tmp/sqlite/file%d.db", counter))
-	if err != nil {
-		panic("can't connect to db")
+// CopyMetadataMap makes a copy of a metadata->bytes mapping
+func CopyMetadataMap(from map[string][]byte) map[string][]byte {
+	copied := make(map[string][]byte)
+	for roleName, metaBytes := range from {
+		copied[roleName] = metaBytes
 	}
-	counter++
-	tx, err := conn.Begin()
-	if err != nil {
-		panic("can't begin db transaction")
-	}
-	tx.Exec("CREATE TABLE keys (id int auto_increment, namespace varchar(255) not null, role varchar(255) not null, key text not null, primary key (id));")
-	tx.Exec("CREATE TABLE filehashes(namespace varchar(255) not null, path varchar(255) not null, alg varchar(10) not null, hash varchar(128) not null, primary key (namespace, path, alg));")
-	tx.Exec("CREATE TABLE filemeta(namespace varchar(255) not null, path varchar(255) not null, size int not null, custom text default null, primary key (namespace, path));")
-	tx.Commit()
-	return conn
-}
-
-// FlushDB deletes a sqliteDB
-func FlushDB(db *sql.DB) {
-	tx, _ := db.Begin()
-	tx.Exec("DELETE FROM `filemeta`")
-	tx.Exec("DELETE FROM `filehashes`")
-	tx.Exec("DELETE FROM `keys`")
-	tx.Commit()
-	os.RemoveAll("/tmp/tuf")
+	return copied
 }

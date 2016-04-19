@@ -19,9 +19,9 @@ import (
 	"github.com/docker/notary/tuf/data"
 	"github.com/docker/notary/tuf/signed"
 	"github.com/docker/notary/tuf/store"
+	"github.com/docker/notary/tuf/testutils/repoutils"
 	"github.com/docker/notary/tuf/validation"
 
-	"github.com/docker/notary/tuf/testutils"
 	"github.com/docker/notary/utils"
 	"github.com/stretchr/testify/require"
 )
@@ -174,7 +174,7 @@ func TestGetKeyHandlerCreatesOnce(t *testing.T) {
 
 func TestGetHandlerRoot(t *testing.T) {
 	metaStore := storage.NewMemStorage()
-	repo, _, err := testutils.EmptyRepo("gun")
+	repo, _, err := repoutils.EmptyRepo("gun")
 	require.NoError(t, err)
 
 	ctx := context.Background()
@@ -202,7 +202,7 @@ func TestGetHandlerRoot(t *testing.T) {
 
 func TestGetHandlerTimestamp(t *testing.T) {
 	metaStore := storage.NewMemStorage()
-	repo, crypto, err := testutils.EmptyRepo("gun")
+	repo, crypto, err := repoutils.EmptyRepo("gun")
 	require.NoError(t, err)
 
 	ctx := getContext(handlerState{store: metaStore, crypto: crypto})
@@ -236,7 +236,7 @@ func TestGetHandlerTimestamp(t *testing.T) {
 
 func TestGetHandlerSnapshot(t *testing.T) {
 	metaStore := storage.NewMemStorage()
-	repo, crypto, err := testutils.EmptyRepo("gun")
+	repo, crypto, err := repoutils.EmptyRepo("gun")
 	require.NoError(t, err)
 
 	ctx := getContext(handlerState{store: metaStore, crypto: crypto})
@@ -324,14 +324,14 @@ func TestAtomicUpdateValidationFailurePropagated(t *testing.T) {
 	gun := "testGUN"
 	vars := map[string]string{"imageName": gun}
 
-	repo, cs, err := testutils.EmptyRepo(gun)
+	repo, cs, err := repoutils.EmptyRepo(gun)
 	require.NoError(t, err)
 
 	state := handlerState{store: metaStore, crypto: copyKeys(t, cs, data.CanonicalTimestampRole)}
 
-	r, tg, sn, ts, err := testutils.Sign(repo)
+	r, tg, sn, ts, err := repoutils.Sign(repo)
 	require.NoError(t, err)
-	rs, tgs, _, _, err := testutils.Serialize(r, tg, sn, ts)
+	rs, tgs, _, _, err := repoutils.Serialize(r, tg, sn, ts)
 	require.NoError(t, err)
 
 	req, err := store.NewMultiPartMetaRequest("", map[string][]byte{
@@ -366,14 +366,14 @@ func TestAtomicUpdateNonValidationFailureNotPropagated(t *testing.T) {
 	gun := "testGUN"
 	vars := map[string]string{"imageName": gun}
 
-	repo, cs, err := testutils.EmptyRepo(gun)
+	repo, cs, err := repoutils.EmptyRepo(gun)
 	require.NoError(t, err)
 
 	state := handlerState{store: &failStore{*metaStore}, crypto: copyKeys(t, cs, data.CanonicalTimestampRole)}
 
-	r, tg, sn, ts, err := testutils.Sign(repo)
+	r, tg, sn, ts, err := repoutils.Sign(repo)
 	require.NoError(t, err)
-	rs, tgs, sns, _, err := testutils.Serialize(r, tg, sn, ts)
+	rs, tgs, sns, _, err := repoutils.Serialize(r, tg, sn, ts)
 	require.NoError(t, err)
 
 	req, err := store.NewMultiPartMetaRequest("", map[string][]byte{
@@ -407,15 +407,15 @@ func TestAtomicUpdateVersionErrorPropagated(t *testing.T) {
 	gun := "testGUN"
 	vars := map[string]string{"imageName": gun}
 
-	repo, cs, err := testutils.EmptyRepo(gun)
+	repo, cs, err := repoutils.EmptyRepo(gun)
 	require.NoError(t, err)
 
 	state := handlerState{
 		store: &invalidVersionStore{*metaStore}, crypto: copyKeys(t, cs, data.CanonicalTimestampRole)}
 
-	r, tg, sn, ts, err := testutils.Sign(repo)
+	r, tg, sn, ts, err := repoutils.Sign(repo)
 	require.NoError(t, err)
-	rs, tgs, sns, _, err := testutils.Serialize(r, tg, sn, ts)
+	rs, tgs, sns, _, err := repoutils.Serialize(r, tg, sn, ts)
 	require.NoError(t, err)
 
 	req, err := store.NewMultiPartMetaRequest("", map[string][]byte{

@@ -9,7 +9,7 @@ import (
 	"github.com/docker/notary/server/storage"
 	"github.com/docker/notary/tuf/data"
 	"github.com/docker/notary/tuf/signed"
-	"github.com/docker/notary/tuf/testutils"
+	"github.com/docker/notary/tuf/testutils/repoutils"
 	"github.com/stretchr/testify/require"
 )
 
@@ -117,7 +117,7 @@ func TestGetSnapshotKeyExistsOnSet(t *testing.T) {
 // If there is no previous snapshot or the previous snapshot is corrupt, then
 // even if everything else is in place, getting the snapshot fails
 func TestGetSnapshotNoPreviousSnapshot(t *testing.T) {
-	repo, crypto, err := testutils.EmptyRepo("gun")
+	repo, crypto, err := repoutils.EmptyRepo("gun")
 	require.NoError(t, err)
 
 	rootJSON, err := json.Marshal(repo.Root)
@@ -155,7 +155,7 @@ func TestGetSnapshotNoPreviousSnapshot(t *testing.T) {
 // load any other metadata that it doesn't need)
 func TestGetSnapshotReturnsPreviousSnapshotIfUnexpired(t *testing.T) {
 	store := storage.NewMemStorage()
-	repo, crypto, err := testutils.EmptyRepo("gun")
+	repo, crypto, err := repoutils.EmptyRepo("gun")
 	require.NoError(t, err)
 
 	snapshotJSON, err := json.Marshal(repo.Snapshot)
@@ -172,7 +172,7 @@ func TestGetSnapshotReturnsPreviousSnapshotIfUnexpired(t *testing.T) {
 
 func TestGetSnapshotOldSnapshotExpired(t *testing.T) {
 	store := storage.NewMemStorage()
-	repo, crypto, err := testutils.EmptyRepo("gun")
+	repo, crypto, err := repoutils.EmptyRepo("gun")
 	require.NoError(t, err)
 
 	rootJSON, err := json.Marshal(repo.Root)
@@ -205,7 +205,7 @@ func TestGetSnapshotOldSnapshotExpired(t *testing.T) {
 
 // If the root is missing or corrupt, no snapshot can be generated
 func TestCannotMakeNewSnapshotIfNoRoot(t *testing.T) {
-	repo, crypto, err := testutils.EmptyRepo("gun")
+	repo, crypto, err := repoutils.EmptyRepo("gun")
 	require.NoError(t, err)
 
 	// create an expired snapshot
@@ -238,7 +238,7 @@ func TestCannotMakeNewSnapshotIfNoRoot(t *testing.T) {
 
 func TestCreateSnapshotNoKeyInCrypto(t *testing.T) {
 	store := storage.NewMemStorage()
-	repo, _, err := testutils.EmptyRepo("gun")
+	repo, _, err := repoutils.EmptyRepo("gun")
 	require.NoError(t, err)
 
 	rootJSON, err := json.Marshal(repo.Root)

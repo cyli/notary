@@ -2,6 +2,7 @@ package utils
 
 import (
 	"bytes"
+	"fmt"
 	"io/ioutil"
 	"net/http"
 	"net/http/httptest"
@@ -11,7 +12,9 @@ import (
 	"time"
 
 	"github.com/docker/distribution/registry/api/errcode"
+	"github.com/docker/distribution/registry/auth"
 	"github.com/docker/notary/tuf/signed"
+	"github.com/gorilla/mux"
 	"github.com/stretchr/testify/require"
 	"golang.org/x/net/context"
 )
@@ -24,44 +27,135 @@ func MockBetterErrorHandler(ctx context.Context, w http.ResponseWriter, r *http.
 	return errcode.ErrorCodeUnknown.WithDetail("Test Error")
 }
 
-func TestRootHandlerFactory(t *testing.T) {
-	hand := RootHandlerFactory(nil, context.Background(), &signed.Ed25519{})
-	handler := hand(MockContextHandler)
-	if _, ok := interface{}(handler).(http.Handler); !ok {
-		t.Fatalf("A rootHandler must implement the http.Handler interface")
+type mockAuthChallenge struct{}
+
+func (m mockAuthChallenge) Error() string { return "auth challenge error" }
+func (m mockAuthChallenge) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+	w.Header().Add("challenge", "accepted")
+}
+
+type mockAccessController struct {
+	gotAccess []auth.Access
+	fail      bool
+}
+
+func (m *mockAccessController) Authorized(ctx context.Context, access ...auth.Access) (context.Context, error) {
+	m.gotAccess = access
+	if m.fail {
+		return nil, mockAuthChallenge{}
 	}
+	return ctx, nil
+}
+
+func TestRootHandlerFactory(t *testing.T) {
+	hand := RootHandlerFactory(nil, context.Background(), &signed.Ed25519{}, nil)
+	handler := hand(MockContextHandler)
+	_, ok := interface{}(handler).(http.Handler)
+	require.True(t, ok, "A rootHandler must implement the http.Handler interface")
 
 	ts := httptest.NewServer(handler)
 	defer ts.Close()
 
 	res, err := http.Get(ts.URL)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if res.StatusCode != http.StatusOK {
-		t.Fatalf("Expected 200, received %d", res.StatusCode)
-	}
+	require.NoError(t, err)
+	require.Equal(t, http.StatusOK, res.StatusCode, "Expected 200, received %d", res.StatusCode)
 }
 
 func TestRootHandlerError(t *testing.T) {
-	hand := RootHandlerFactory(nil, context.Background(), &signed.Ed25519{})
+	hand := RootHandlerFactory(nil, context.Background(), &signed.Ed25519{}, nil)
 	handler := hand(MockBetterErrorHandler)
 
 	ts := httptest.NewServer(handler)
 	defer ts.Close()
 
 	res, err := http.Get(ts.URL)
-	if res.StatusCode != http.StatusInternalServerError {
-		t.Fatalf("Expected 500, received %d", res.StatusCode)
-	}
+	require.NoError(t, err)
+	require.Equal(t, http.StatusInternalServerError, res.StatusCode, "Expected 500, received %d", res.StatusCode)
+
 	content, err := ioutil.ReadAll(res.Body)
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
 	contentStr := strings.Trim(string(content), "\r\n\t ")
-	if strings.TrimSpace(contentStr) != `{"errors":[{"code":"UNKNOWN","message":"unknown error","detail":"Test Error"}]}` {
-		t.Fatalf("Error Body Incorrect: `%s`", content)
+	require.Equal(t,
+		`{"errors":[{"code":"UNKNOWN","message":"unknown error","detail":"Test Error"}]}`,
+		strings.TrimSpace(contentStr),
+		"Error Body Incorrect: `%s`", content)
+}
+
+func TestRootHandlerAuthWithImagePrefixes(t *testing.T) {
+	prefixes := []string{"prefix1/", "prefix2/"}
+	fakeAuth := mockAccessController{}
+	cryptoService := &signed.Ed25519{}
+
+	hand := RootHandlerFactory(&fakeAuth, context.Background(), cryptoService, prefixes)
+	actions := []string{"push", "pull"}
+	body := []byte("auth was fine")
+
+	r := mux.NewRouter()
+	r.Methods("GET").Path("/{imageName:.*}").Handler(
+		hand(func(_ context.Context, w http.ResponseWriter, r *http.Request) error {
+			w.Write(body)
+			return nil
+		}, actions...))
+	ts := httptest.NewServer(r)
+
+	// if there are image names with prefixes, the image name is sent to the access controller
+	// without the prefix
+	imageNameMap := make(map[string]string)
+	for _, prefix := range prefixes {
+		for _, name := range []string{"name/repo", "prefix1/prefix2", "prefix2/prefix1"} {
+			imageNameMap[prefix+name] = name
+		}
 	}
+
+	imageNameMap["hello/no/prefix1"] = "hello/no/prefix1"
+
+	for urlImageName, expectedImageName := range imageNameMap {
+		// if auth succeeded, then the response should succeed and call to the regular handler
+		res, err := http.Get(fmt.Sprintf("%s/%s", ts.URL, urlImageName))
+		require.NoError(t, err)
+		require.Equal(t, http.StatusOK, res.StatusCode)
+		content, err := ioutil.ReadAll(res.Body)
+		require.NoError(t, err)
+		require.Equal(t, body, content)
+
+		// we require one access object per action, and all of the have the expected
+		// image name passed
+		require.Len(t, fakeAuth.gotAccess, 2)
+		for i, access := range fakeAuth.gotAccess {
+			require.Equal(t, auth.Resource{Type: "repository", Name: expectedImageName}, access.Resource)
+			require.Equal(t, actions[i], access.Action)
+		}
+	}
+}
+
+func TestRootHandlerAuthWithoutImagePrefixes(t *testing.T) {
+	fakeAuth := mockAccessController{fail: true}
+	cryptoService := &signed.Ed25519{}
+
+	hand := RootHandlerFactory(&fakeAuth, context.Background(), cryptoService, nil)
+
+	r := mux.NewRouter()
+	r.Methods("GET").Path("/{imageName:.*}").Handler(
+		hand(func(_ context.Context, w http.ResponseWriter, r *http.Request) error {
+			w.Write([]byte("auth is fine"))
+			return nil
+		}, "push"))
+	ts := httptest.NewServer(r)
+
+	// if auth fails, then the response should be 401 with the right headers and no body
+	res, err := http.Get(fmt.Sprintf("%s/prefix/nope", ts.URL))
+	require.NoError(t, err)
+	require.Equal(t, http.StatusUnauthorized, res.StatusCode)
+	require.Equal(t, "accepted", res.Header.Get("challenge"))
+	content, err := ioutil.ReadAll(res.Body)
+	require.NoError(t, err)
+	require.Empty(t, content)
+
+	// we require one access object since there is only one action, and that the object has
+	// the expected image name passed
+	require.Len(t, fakeAuth.gotAccess, 1)
+	require.Equal(t, auth.Resource{Type: "repository", Name: "prefix/nope"}, fakeAuth.gotAccess[0].Resource)
+	require.Equal(t, "push", fakeAuth.gotAccess[0].Action)
 }
 
 // If no CacheControlConfig is passed, wrapping the handler just returns the handler

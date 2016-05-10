@@ -3,6 +3,7 @@ package utils
 import (
 	"fmt"
 	"net/http"
+	"strings"
 	"time"
 
 	"github.com/Sirupsen/logrus"
@@ -22,26 +23,29 @@ type contextHandler func(ctx context.Context, w http.ResponseWriter, r *http.Req
 // rootHandler is an implementation of an HTTP request handler which handles
 // authorization and calling out to the defined alternate http handler.
 type rootHandler struct {
-	handler contextHandler
-	auth    auth.AccessController
-	actions []string
-	context context.Context
-	trust   signed.CryptoService
-	//cachePool redis.Pool
+	handler         contextHandler
+	auth            auth.AccessController
+	actions         []string
+	context         context.Context
+	trust           signed.CryptoService
+	toStripPrefixes []string
 }
 
 // RootHandlerFactory creates a new rootHandler factory  using the given
 // Context creator and authorizer.  The returned factory allows creating
 // new rootHandlers from the alternate http handler contextHandler and
 // a scope.
-func RootHandlerFactory(auth auth.AccessController, ctx context.Context, trust signed.CryptoService) func(contextHandler, ...string) *rootHandler {
+func RootHandlerFactory(auth auth.AccessController, ctx context.Context, trust signed.CryptoService,
+	toStripPrefixes []string) func(contextHandler, ...string) *rootHandler {
+
 	return func(handler contextHandler, actions ...string) *rootHandler {
 		return &rootHandler{
-			handler: handler,
-			auth:    auth,
-			actions: actions,
-			context: ctx,
-			trust:   trust,
+			handler:         handler,
+			auth:            auth,
+			actions:         actions,
+			context:         ctx,
+			trust:           trust,
+			toStripPrefixes: toStripPrefixes,
 		}
 	}
 }
@@ -52,15 +56,22 @@ func (root *rootHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	ctx := ctxu.WithRequest(root.context, r)
 	ctx, w = ctxu.WithResponseWriter(ctx, w)
 	ctx = ctxu.WithLogger(ctx, ctxu.GetRequestLogger(ctx))
-	ctx = context.WithValue(ctx, "repo", vars["imageName"])
-	ctx = context.WithValue(ctx, "cryptoService", root.trust)
 
 	defer func() {
 		ctxu.GetResponseLogger(ctx).Info("response completed")
 	}()
 
+	// filter out any imagename that doesn't start with the required prefixes
+	imageName := vars["imageName"]
+	for _, prefix := range root.toStripPrefixes {
+		if strings.HasPrefix(vars["imageName"], prefix) {
+			imageName = imageName[len(prefix):]
+			break
+		}
+	}
+
 	if root.auth != nil {
-		access := buildAccessRecords(vars["imageName"], root.actions...)
+		access := buildAccessRecords(imageName, root.actions...)
 		var authCtx context.Context
 		var err error
 		if authCtx, err = root.auth.Authorized(ctx, access...); err != nil {
@@ -76,6 +87,9 @@ func (root *rootHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		}
 		ctx = authCtx
 	}
+
+	ctx = context.WithValue(ctx, "cryptoService", root.trust)
+
 	if err := root.handler(ctx, w, r); err != nil {
 		e := errcode.ServeJSON(w, err)
 		if e != nil {

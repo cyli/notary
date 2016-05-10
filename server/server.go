@@ -90,7 +90,7 @@ func Run(ctx context.Context, conf Config) error {
 func RootHandler(ac auth.AccessController, ctx context.Context, trust signed.CryptoService,
 	consistent, current utils.CacheControlConfig) http.Handler {
 
-	hand := utils.RootHandlerFactory(ac, ctx, trust)
+	hand := utils.RootHandlerFactory(ac, ctx, trust, repoPrefixes)
 
 	r := mux.NewRouter()
 	r.Methods("GET").Path("/v2/").Handler(hand(handlers.MainHandler))

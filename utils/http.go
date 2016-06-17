@@ -3,11 +3,13 @@ package utils
 import (
 	"fmt"
 	"net/http"
+	"strings"
 	"time"
 
 	ctxu "github.com/docker/distribution/context"
 	"github.com/docker/distribution/registry/api/errcode"
 	"github.com/docker/distribution/registry/auth"
+	"github.com/docker/distribution/registry/auth/token"
 	"github.com/docker/notary/tuf/signed"
 	"github.com/gorilla/mux"
 	"golang.org/x/net/context"
@@ -58,8 +60,18 @@ func (root *rootHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		ctxu.GetResponseLogger(ctx).Info("response completed")
 	}()
 
+	parts := strings.Split(r.Header.Get("Authorization"), " ")
+
+	if len(parts) == 2 && strings.ToLower(parts[0]) == "bearer" {
+		rawToken := parts[1]
+
+		token, err := token.NewToken(rawToken)
+		fmt.Println("Bearer token, maybe error:", token, err)
+	}
+
 	if root.auth != nil {
 		access := buildAccessRecords(vars["imageName"], root.actions...)
+		fmt.Printf("Auth enabled, access requested for %s: %v\n", vars["imageName"], access)
 		var authCtx context.Context
 		var err error
 		if authCtx, err = root.auth.Authorized(ctx, access...); err != nil {

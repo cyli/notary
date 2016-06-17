@@ -19,5 +19,14 @@
 	"storage": {
 		"backend": "mysql",
 		"db_url": "server@tcp(mysql:3306)/notaryserver?parseTime=True"
-	}
+	},
+    "auth": {
+        "type": "token",
+        "options": {
+            "realm": "your-realm-here",
+            "service": "your-service-here",
+            "issuer": "your-issuer-here",
+            "rootcertbundle": "/go/src/github.com/docker/notary/jwttokencert.pem"
+        }
+    }
 }

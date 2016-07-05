@@ -9,8 +9,6 @@ import (
 	"github.com/docker/notary"
 	"github.com/docker/notary/tuf/data"
 	"strings"
-	//"os/exec"
-	//"regexp"
 )
 
 // KeyNativeStore is an implementation of Storage that keeps

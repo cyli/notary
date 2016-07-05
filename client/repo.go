@@ -17,7 +17,7 @@ import (
 // (This is normally defaults to "~/.notary" or "~/.docker/trust" when enabling
 // docker content trust).
 func NewNotaryRepository(baseDir, gun, baseURL string, rt http.RoundTripper,
-	retriever notary.PassRetriever, trustPinning trustpinning.TrustPinConfig, UseNative bool) (
+	retriever notary.PassRetriever, trustPinning trustpinning.TrustPinConfig, useNative bool) (
 	*NotaryRepository, error) {
 
 	fileKeyStore, err := trustmanager.NewKeyFileStore(baseDir, retriever)
@@ -25,8 +25,8 @@ func NewNotaryRepository(baseDir, gun, baseURL string, rt http.RoundTripper,
 		return nil, fmt.Errorf("failed to create private key store in directory: %s", baseDir)
 	}
 	keyStores := []trustmanager.KeyStore{fileKeyStore}
-	if UseNative {
-		nativeKeyStore, err := trustmanager.NewKeyNativeStore(passphrase.ConstantRetriever("password"))
+	if useNative {
+		nativeKeyStore, err := trustmanager.NewKeyNativeStore(passphrase.PromptRetriever())
 		if err == nil {
 			// Note that the order is important, since we want to prioritize
 			// the native key store

@@ -26,6 +26,7 @@ import (
 	"github.com/docker/notary/trustmanager"
 	"github.com/docker/notary/trustpinning"
 	"github.com/docker/notary/tuf/data"
+	tufutils "github.com/docker/notary/tuf/utils"
 	"github.com/docker/notary/utils"
 	"github.com/spf13/cobra"
 	"github.com/spf13/viper"
@@ -282,11 +283,8 @@ func (t *tufCommander) tufAddByHash(cmd *cobra.Command, args []string) error {
 		return err
 	}
 
-	// Manually construct the target with the given byte size and hashes
-	target := &notaryclient.Target{Name: targetName, Hashes: targetHashes, Length: targetInt64Len}
-
 	// If roles is empty, we default to adding to targets
-	if err = nRepo.AddTarget(target, t.roles...); err != nil {
+	if err = nRepo.AddTarget(targetName, data.FileMeta{Hashes: targetHashes, Length: targetInt64Len}, t.roles...); err != nil {
 		return err
 	}
 	// Include the hash algorithms we're using for pretty printing
@@ -328,12 +326,12 @@ func (t *tufCommander) tufAdd(cmd *cobra.Command, args []string) error {
 		return err
 	}
 
-	target, err := notaryclient.NewTarget(targetName, targetPath)
+	meta, err := tufutils.MetaFromFile(targetPath)
 	if err != nil {
 		return err
 	}
 	// If roles is empty, we default to adding to targets
-	if err = nRepo.AddTarget(target, t.roles...); err != nil {
+	if err = nRepo.AddTarget(targetName, meta, t.roles...); err != nil {
 		return err
 	}
 

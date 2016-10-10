@@ -1,11 +1,13 @@
 package utils
 
 import (
+	"bytes"
 	"crypto/sha256"
 	"crypto/sha512"
 	"encoding/hex"
 	"fmt"
 	"io"
+	"io/ioutil"
 
 	"github.com/docker/notary/tuf/data"
 )
@@ -106,4 +108,15 @@ func ConsistentName(role string, hashSHA256 []byte) string {
 		return fmt.Sprintf("%s.%s", role, hash)
 	}
 	return role
+}
+
+// MetaFromFile reads a file from the provided filepath and returns a data.FileMeta
+// object
+func MetaFromFile(targetPath string) (data.FileMeta, error) {
+	b, err := ioutil.ReadFile(targetPath)
+	if err != nil {
+		return data.FileMeta{}, err
+	}
+
+	return data.NewFileMeta(bytes.NewBuffer(b), data.NotaryDefaultHashes...)
 }

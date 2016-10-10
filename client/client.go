@@ -1,10 +1,8 @@
 package client
 
 import (
-	"bytes"
 	"encoding/json"
 	"fmt"
-	"io/ioutil"
 	"net/http"
 	"net/url"
 	"os"
@@ -36,11 +34,13 @@ func init() {
 // NotaryRepository stores all the information needed to operate on a notary
 // repository.
 type NotaryRepository struct {
+	changelist.Writer
 	baseDir       string
 	gun           string
 	baseURL       string
 	tufRepoPath   string
 	cache         store.MetadataStore
+	cl            changelist.Changelist
 	CryptoService signed.CryptoService
 	tufRepo       *tuf.Repo
 	invalid       *tuf.Repo // known data that was parsable but deemed invalid
@@ -101,37 +101,23 @@ func repositoryFromKeystores(baseDir, gun, baseURL string, rt http.RoundTripper,
 
 	nRepo.cache = cache
 
+	cl, err := changelist.NewFileChangelist(filepath.Join(nRepo.tufRepoPath, "changelist"))
+	if err != nil {
+		return nil, err
+	}
+	nRepo.cl = cl
+	nRepo.Writer = changelist.NewWriter(cl, nil)
+
 	return nRepo, nil
 }
 
-// Target represents a simplified version of the data TUF operates on, so external
-// applications don't have to depend on TUF data types.
-type Target struct {
+// TargetWithRole represents a target that exists within a particular role - this is
+// produced by ListTargets and GetTargetByName
+type TargetWithRole struct {
 	Name   string      // the name of the target
 	Hashes data.Hashes // the hash of the target
 	Length int64       // the size in bytes of the target
-}
-
-// TargetWithRole represents a Target that exists in a particular role - this is
-// produced by ListTargets and GetTargetByName
-type TargetWithRole struct {
-	Target
-	Role string
-}
-
-// NewTarget is a helper method that returns a Target
-func NewTarget(targetName string, targetPath string) (*Target, error) {
-	b, err := ioutil.ReadFile(targetPath)
-	if err != nil {
-		return nil, err
-	}
-
-	meta, err := data.NewFileMeta(bytes.NewBuffer(b), data.NotaryDefaultHashes...)
-	if err != nil {
-		return nil, err
-	}
-
-	return &Target{Name: targetName, Hashes: meta.Hashes, Length: meta.Length}, nil
+	Role   data.DelegationRole
 }
 
 func rootCertKey(gun string, privKey data.PrivateKey) (data.PublicKey, error) {
@@ -146,7 +132,7 @@ func rootCertKey(gun string, privKey data.PrivateKey) (data.PublicKey, error) {
 	x509PublicKey := utils.CertToKey(cert)
 	if x509PublicKey == nil {
 		return nil, fmt.Errorf(
-			"cannot use regenerated certificate: format %s", cert.PublicKeyAlgorithm)
+			"cannot use regenerated certificate: format %v", cert.PublicKeyAlgorithm)
 	}
 
 	return x509PublicKey, nil
@@ -296,83 +282,6 @@ func (r *NotaryRepository) initializeRoles(rootKeys []data.PublicKey, localRoles
 	return root, targets, snapshot, timestamp, nil
 }
 
-// adds a TUF Change template to the given roles
-func addChange(cl *changelist.FileChangelist, c changelist.Change, roles ...string) error {
-
-	if len(roles) == 0 {
-		roles = []string{data.CanonicalTargetsRole}
-	}
-
-	var changes []changelist.Change
-	for _, role := range roles {
-		// Ensure we can only add targets to the CanonicalTargetsRole,
-		// or a Delegation role (which is <CanonicalTargetsRole>/something else)
-		if role != data.CanonicalTargetsRole && !data.IsDelegation(role) && !data.IsWildDelegation(role) {
-			return data.ErrInvalidRole{
-				Role:   role,
-				Reason: "cannot add targets to this role",
-			}
-		}
-
-		changes = append(changes, changelist.NewTUFChange(
-			c.Action(),
-			role,
-			c.Type(),
-			c.Path(),
-			c.Content(),
-		))
-	}
-
-	for _, c := range changes {
-		if err := cl.Add(c); err != nil {
-			return err
-		}
-	}
-	return nil
-}
-
-// AddTarget creates new changelist entries to add a target to the given roles
-// in the repository when the changelist gets applied at publish time.
-// If roles are unspecified, the default role is "targets"
-func (r *NotaryRepository) AddTarget(target *Target, roles ...string) error {
-
-	if len(target.Hashes) == 0 {
-		return fmt.Errorf("no hashes specified for target \"%s\"", target.Name)
-	}
-	cl, err := changelist.NewFileChangelist(filepath.Join(r.tufRepoPath, "changelist"))
-	if err != nil {
-		return err
-	}
-	defer cl.Close()
-	logrus.Debugf("Adding target \"%s\" with sha256 \"%x\" and size %d bytes.\n", target.Name, target.Hashes["sha256"], target.Length)
-
-	meta := data.FileMeta{Length: target.Length, Hashes: target.Hashes}
-	metaJSON, err := json.Marshal(meta)
-	if err != nil {
-		return err
-	}
-
-	template := changelist.NewTUFChange(
-		changelist.ActionCreate, "", changelist.TypeTargetsTarget,
-		target.Name, metaJSON)
-	return addChange(cl, template, roles...)
-}
-
-// RemoveTarget creates new changelist entries to remove a target from the given
-// roles in the repository when the changelist gets applied at publish time.
-// If roles are unspecified, the default role is "target".
-func (r *NotaryRepository) RemoveTarget(targetName string, roles ...string) error {
-
-	cl, err := changelist.NewFileChangelist(filepath.Join(r.tufRepoPath, "changelist"))
-	if err != nil {
-		return err
-	}
-	logrus.Debugf("Removing target \"%s\"", targetName)
-	template := changelist.NewTUFChange(changelist.ActionDelete, "",
-		changelist.TypeTargetsTarget, targetName, nil)
-	return addChange(cl, template, roles...)
-}
-
 // ListTargets lists all targets for the current repository. The list of
 // roles should be passed in order from highest to lowest priority.
 //
@@ -404,12 +313,10 @@ func (r *NotaryRepository) ListTargets(roles ...string) ([]*TargetWithRole, erro
 					continue
 				}
 				targets[targetName] = &TargetWithRole{
-					Target: Target{
-						Name:   targetName,
-						Hashes: targetMeta.Hashes,
-						Length: targetMeta.Length,
-					},
-					Role: validRole.Name,
+					Name:   targetName,
+					Hashes: targetMeta.Hashes,
+					Length: targetMeta.Length,
+					Role:   validRole,
 				}
 			}
 			return nil
@@ -442,7 +349,7 @@ func (r *NotaryRepository) GetTargetByName(name string, roles ...string) (*Targe
 		roles = append(roles, data.CanonicalTargetsRole)
 	}
 	var resultMeta data.FileMeta
-	var resultRoleName string
+	var resultRole data.DelegationRole
 	var foundTarget bool
 	for _, role := range roles {
 		// Define an array of roles to skip for this walk (see IMPORTANT comment above)
@@ -456,24 +363,23 @@ func (r *NotaryRepository) GetTargetByName(name string, roles ...string) (*Targe
 			// We found the target and validated path compatibility in our walk,
 			// so we should stop our walk and set the resultMeta and resultRoleName variables
 			if resultMeta, foundTarget = tgt.Signed.Targets[name]; foundTarget {
-				resultRoleName = validRole.Name
+				resultRole = validRole
 				return tuf.StopWalk{}
 			}
 			return nil
 		}
 		// Check that we didn't error, and that we assigned to our target
 		if err := r.tufRepo.WalkTargets(name, role, getTargetVisitorFunc, skipRoles...); err == nil && foundTarget {
-			return &TargetWithRole{Target: Target{Name: name, Hashes: resultMeta.Hashes, Length: resultMeta.Length}, Role: resultRoleName}, nil
+			return &TargetWithRole{Name: name, Hashes: resultMeta.Hashes, Length: resultMeta.Length, Role: resultRole}, nil
 		}
 	}
 	return nil, fmt.Errorf("No trust data for %s", name)
 
 }
 
-// TargetSignedStruct is a struct that contains a Target, the role it was found in, and the list of signatures for that role
+// TargetSignedStruct is a struct that contains a TargetWithRole and the list of signatures for that role
 type TargetSignedStruct struct {
-	Role       data.DelegationRole
-	Target     Target
+	Target     TargetWithRole
 	Signatures []data.Signature
 }
 
@@ -506,8 +412,7 @@ func (r *NotaryRepository) GetAllTargetMetadataByName(name string) ([]TargetSign
 
 		for targetName, resultMeta := range targetMetaToAdd {
 			targetInfo := TargetSignedStruct{
-				Role:       validRole,
-				Target:     Target{Name: targetName, Hashes: resultMeta.Hashes, Length: resultMeta.Length},
+				Target:     TargetWithRole{Name: targetName, Hashes: resultMeta.Hashes, Length: resultMeta.Length, Role: validRole},
 				Signatures: tgt.Signatures,
 			}
 			targetInfoList = append(targetInfoList, targetInfo)
@@ -528,13 +433,7 @@ func (r *NotaryRepository) GetAllTargetMetadataByName(name string) ([]TargetSign
 
 // GetChangelist returns the list of the repository's unpublished changes
 func (r *NotaryRepository) GetChangelist() (changelist.Changelist, error) {
-	changelistDir := filepath.Join(r.tufRepoPath, "changelist")
-	cl, err := changelist.NewFileChangelist(changelistDir)
-	if err != nil {
-		logrus.Debug("Error initializing changelist")
-		return nil, err
-	}
-	return cl, nil
+	return r.cl, nil
 }
 
 // RoleWithSignatures is a Role with its associated signatures
@@ -585,14 +484,10 @@ func (r *NotaryRepository) ListRoles() ([]RoleWithSignatures, error) {
 // Publish pushes the local changes in signed material to the remote notary-server
 // Conceptually it performs an operation similar to a `git rebase`
 func (r *NotaryRepository) Publish() error {
-	cl, err := r.GetChangelist()
-	if err != nil {
+	if err := r.publish(r.cl); err != nil {
 		return err
 	}
-	if err = r.publish(cl); err != nil {
-		return err
-	}
-	if err = cl.Clear(""); err != nil {
+	if err := r.cl.Clear(""); err != nil {
 		// This is not a critical problem when only a single host is pushing
 		// but will cause weird behaviour if changelist cleanup is failing
 		// and there are multiple hosts writing to the repo.
@@ -631,7 +526,7 @@ func (r *NotaryRepository) publish(cl changelist.Changelist) error {
 		}
 	}
 	// apply the changelist to the repo
-	if err := applyChangelist(r.tufRepo, r.invalid, cl); err != nil {
+	if err := changelist.ApplyChangelist(r.tufRepo, r.invalid, cl); err != nil {
 		logrus.Debug("Error applying changelist")
 		return err
 	}

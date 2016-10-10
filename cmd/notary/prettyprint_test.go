@@ -168,10 +168,9 @@ func TestPrettyPrintSortedTargets(t *testing.T) {
 		require.NoError(t, err)
 	}
 	unsorted := []*client.TargetWithRole{
-		{Target: client.Target{Name: "zebra", Hashes: data.Hashes{"sha256": hashes[0]}, Length: 8}, Role: "targets/b"},
-		{Target: client.Target{Name: "aardvark", Hashes: data.Hashes{"sha256": hashes[1]}, Length: 1},
-			Role: "targets"},
-		{Target: client.Target{Name: "bee", Hashes: data.Hashes{"sha256": hashes[2]}, Length: 5}, Role: "targets/a"},
+		{Name: "zebra", Hashes: data.Hashes{"sha256": hashes[0]}, Length: 8, Role: data.DelegationRole{BaseRole: data.BaseRole{Name: "targets/b"}}},
+		{Name: "aardvark", Hashes: data.Hashes{"sha256": hashes[1]}, Length: 1, Role: data.DelegationRole{BaseRole: data.BaseRole{Name: "targets"}}},
+		{Name: "bee", Hashes: data.Hashes{"sha256": hashes[2]}, Length: 5, Role: data.DelegationRole{BaseRole: data.BaseRole{Name: "targets/a"}}},
 	}
 
 	var b bytes.Buffer

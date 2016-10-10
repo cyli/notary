@@ -169,7 +169,7 @@ func prettyPrintTargets(ts []*client.TargetWithRole, writer io.Writer) {
 			t.Name,
 			hex.EncodeToString(t.Hashes["sha256"]),
 			fmt.Sprintf("%d", t.Length),
-			t.Role,
+			t.Role.Name,
 		)
 	}
 	tw.Flush()

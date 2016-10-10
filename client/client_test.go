@@ -12,7 +12,6 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
-	"reflect"
 	"sort"
 	"testing"
 	"time"
@@ -630,384 +629,22 @@ func testInitRepoPasswordInvalid(t *testing.T, rootType string) {
 }
 
 func addTarget(t *testing.T, repo *NotaryRepository, targetName, targetFile string,
-	roles ...string) *Target {
-	target, err := NewTarget(targetName, targetFile)
-	require.NoError(t, err, "error creating target")
-	err = repo.AddTarget(target, roles...)
+	roles ...string) *TargetWithRole {
+	fileMeta, err := utils.MetaFromFile(targetFile)
+	require.NoError(t, err, "error creating file meta")
+	err = repo.AddTarget(targetName, fileMeta, roles...)
 	require.NoError(t, err, "error adding target")
-	return target
+
+	return &TargetWithRole{Name: targetName, Length: fileMeta.Length, Hashes: fileMeta.Hashes}
 }
 
-// calls GetChangelist and gets the actual changes out
-func getChanges(t *testing.T, repo *NotaryRepository) []changelist.Change {
-	changeList, err := repo.GetChangelist()
-	require.NoError(t, err)
-	return changeList.List()
-}
-
-// TestAddTargetToTargetRoleByDefault adds a target without specifying a role
-// to a repo without delegations.  Confirms that the changelist is created
-// correctly, for the targets scope.
-func TestAddTargetToTargetRoleByDefault(t *testing.T) {
-	testAddTargetToTargetRoleByDefault(t, false)
-	testAddTargetToTargetRoleByDefault(t, true)
-}
-
-func testAddTargetToTargetRoleByDefault(t *testing.T, clearCache bool) {
-	ts, _, _ := simpleTestServer(t)
-	defer ts.Close()
-
-	repo, _ := initializeRepo(t, data.ECDSAKey, "docker.com/notary", ts.URL, false)
-	defer os.RemoveAll(repo.baseDir)
-
-	var rec *passRoleRecorder
-	if clearCache {
-		repo, rec = newRepoToTestRepo(t, repo, false)
-	}
-
-	testAddOrDeleteTarget(t, repo, changelist.ActionCreate, nil,
-		[]string{data.CanonicalTargetsRole})
-
-	if clearCache {
-		// no key creation or signing happened, because add doesn't ever require signing
-		rec.requireCreated(t, nil)
-		rec.requireAsked(t, nil)
-	}
-}
-
-// Tests that adding a target to a repo or deleting a target from a repo,
-// with the given roles, makes a change to the expected scopes
-func testAddOrDeleteTarget(t *testing.T, repo *NotaryRepository, action string,
-	rolesToChange []string, expectedScopes []string) {
-
-	require.Len(t, getChanges(t, repo), 0, "should start with zero changes")
-
-	if action == changelist.ActionCreate {
-		// Add fixtures/intermediate-ca.crt as a target. There's no particular
-		// reason for using this file except that it happens to be available as
-		// a fixture.
-		addTarget(t, repo, "latest", "../fixtures/intermediate-ca.crt", rolesToChange...)
-	} else {
-		err := repo.RemoveTarget("latest", rolesToChange...)
-		require.NoError(t, err, "error removing target")
-	}
-
-	changes := getChanges(t, repo)
-	require.Len(t, changes, len(expectedScopes), "wrong number of changes files found")
-
-	foundScopes := make(map[string]bool)
-	for _, c := range changes { // there is only one
-		require.EqualValues(t, action, c.Action())
-		foundScopes[c.Scope()] = true
-		require.Equal(t, "target", c.Type())
-		require.Equal(t, "latest", c.Path())
-		if action == changelist.ActionCreate {
-			require.NotEmpty(t, c.Content())
-		} else {
-			require.Empty(t, c.Content())
-		}
-	}
-	require.Len(t, foundScopes, len(expectedScopes))
-	for _, expectedScope := range expectedScopes {
-		_, ok := foundScopes[expectedScope]
-		require.True(t, ok, "Target was not added/removed from %s", expectedScope)
-	}
-
-	// add/delete a second time
-	if action == changelist.ActionCreate {
-		addTarget(t, repo, "current", "../fixtures/intermediate-ca.crt", rolesToChange...)
-	} else {
-		err := repo.RemoveTarget("current", rolesToChange...)
-		require.NoError(t, err, "error removing target")
-	}
-
-	changes = getChanges(t, repo)
-	require.Len(t, changes, 2*len(expectedScopes),
-		"wrong number of changelist files found")
-
-	newFileFound := false
-	foundScopes = make(map[string]bool)
-	for _, c := range changes {
-		if c.Path() != "latest" {
-			require.EqualValues(t, action, c.Action())
-			foundScopes[c.Scope()] = true
-			require.Equal(t, "target", c.Type())
-			require.Equal(t, "current", c.Path())
-			if action == changelist.ActionCreate {
-				require.NotEmpty(t, c.Content())
-			} else {
-				require.Empty(t, c.Content())
-			}
-
-			newFileFound = true
-		}
-	}
-	require.True(t, newFileFound, "second changelist file not found")
-	require.Len(t, foundScopes, len(expectedScopes))
-	for _, expectedScope := range expectedScopes {
-		_, ok := foundScopes[expectedScope]
-		require.True(t, ok, "Target was not added/removed from %s", expectedScope)
-	}
-}
-
-// TestAddTargetToSpecifiedValidRoles adds a target to the specified roles.
-// Confirms that the changelist is created correctly, one for each of the
-// the specified roles as scopes.
-func TestAddTargetToSpecifiedValidRoles(t *testing.T) {
-	testAddTargetToSpecifiedValidRoles(t, false)
-	testAddTargetToSpecifiedValidRoles(t, true)
-}
-
-func testAddTargetToSpecifiedValidRoles(t *testing.T, clearCache bool) {
-	ts, _, _ := simpleTestServer(t)
-	defer ts.Close()
-
-	repo, _ := initializeRepo(t, data.ECDSAKey, "docker.com/notary", ts.URL, false)
-	defer os.RemoveAll(repo.baseDir)
-
-	var rec *passRoleRecorder
-	if clearCache {
-		repo, rec = newRepoToTestRepo(t, repo, false)
-	}
-
-	roleName := filepath.Join(data.CanonicalTargetsRole, "a")
-	testAddOrDeleteTarget(t, repo, changelist.ActionCreate,
-		[]string{
-			data.CanonicalTargetsRole,
-			roleName,
-		},
-		[]string{data.CanonicalTargetsRole, roleName})
-
-	if clearCache {
-		// no key creation or signing happened, because add doesn't ever require signing
-		rec.requireCreated(t, nil)
-		rec.requireAsked(t, nil)
-	}
-}
-
-// TestAddTargetToSpecifiedInvalidRoles expects errors to be returned if
-// adding a target to an invalid role.  If any of the roles are invalid,
-// no targets are added to any roles.
-func TestAddTargetToSpecifiedInvalidRoles(t *testing.T) {
-	testAddTargetToSpecifiedInvalidRoles(t, false)
-	testAddTargetToSpecifiedInvalidRoles(t, true)
-}
-
-func testAddTargetToSpecifiedInvalidRoles(t *testing.T, clearCache bool) {
-	ts, _, _ := simpleTestServer(t)
-	defer ts.Close()
-
-	repo, _ := initializeRepo(t, data.ECDSAKey, "docker.com/notary", ts.URL, false)
-	defer os.RemoveAll(repo.baseDir)
-
-	var rec *passRoleRecorder
-	if clearCache {
-		repo, rec = newRepoToTestRepo(t, repo, false)
-	}
-
-	invalidRoles := []string{
-		data.CanonicalRootRole,
-		data.CanonicalSnapshotRole,
-		data.CanonicalTimestampRole,
-		"target/otherrole",
-		"otherrole",
-		"TARGETS/ALLCAPSROLE",
-	}
-
-	for _, invalidRole := range invalidRoles {
-		target, err := NewTarget("latest", "../fixtures/intermediate-ca.crt")
-		require.NoError(t, err, "error creating target")
-
-		err = repo.AddTarget(target, data.CanonicalTargetsRole, invalidRole)
-		require.Error(t, err, "Expected an ErrInvalidRole error")
-		require.IsType(t, data.ErrInvalidRole{}, err)
-
-		changes := getChanges(t, repo)
-		require.Len(t, changes, 0)
-	}
-
-	if clearCache {
-		// no key creation or signing happened, because add doesn't ever require signing
-		rec.requireCreated(t, nil)
-		rec.requireAsked(t, nil)
-	}
-}
-
-// General way to require that errors writing a changefile are propagated up
-func testErrorWritingChangefiles(t *testing.T, writeChangeFile func(*NotaryRepository) error) {
-	ts, _, _ := simpleTestServer(t)
-	defer ts.Close()
-
-	repo, _ := initializeRepo(t, data.ECDSAKey, "docker.com/notary", ts.URL, false)
-	defer os.RemoveAll(repo.baseDir)
-
-	// first, make the actual changefile unwritable by making the changelist
-	// directory unwritable
-	changelistPath := filepath.Join(repo.tufRepoPath, "changelist")
-	err := os.MkdirAll(changelistPath, 0744)
-	require.NoError(t, err, "could not create changelist dir")
-	err = os.Chmod(changelistPath, 0600)
-	require.NoError(t, err, "could not change permission of changelist dir")
-
-	err = writeChangeFile(repo)
-	require.Error(t, err, "Expected an error writing the change")
-	require.IsType(t, &os.PathError{}, err)
-
-	// then break prevent the changlist directory from being able to be created
-	err = os.Chmod(changelistPath, 0744)
-	require.NoError(t, err, "could not change permission of temp dir")
-	err = os.RemoveAll(changelistPath)
-	require.NoError(t, err, "could not remove changelist dir")
-	// creating a changelist file so the directory can't be created
-	err = ioutil.WriteFile(changelistPath, []byte("hi"), 0644)
-	require.NoError(t, err, "could not write temporary file")
-
-	err = writeChangeFile(repo)
-	require.Error(t, err, "Expected an error writing the change")
-	require.IsType(t, &os.PathError{}, err)
-}
-
-// Ensures that AddTarget errors on invalid target input (no hashes)
-func TestAddTargetWithInvalidTarget(t *testing.T) {
-	ts, _, _ := simpleTestServer(t)
-	defer ts.Close()
-
-	repo, _ := initializeRepo(t, data.ECDSAKey, "docker.com/notary", ts.URL, false)
-	defer os.RemoveAll(repo.baseDir)
-
-	target, err := NewTarget("latest", "../fixtures/intermediate-ca.crt")
-	require.NoError(t, err, "error creating target")
-
-	// Clear the hashes
-	target.Hashes = data.Hashes{}
-	require.Error(t, repo.AddTarget(target, data.CanonicalTargetsRole))
-}
-
-// TestAddTargetErrorWritingChanges expects errors writing a change to file
-// to be propagated.
-func TestAddTargetErrorWritingChanges(t *testing.T) {
-	testErrorWritingChangefiles(t, func(repo *NotaryRepository) error {
-		target, err := NewTarget("latest", "../fixtures/intermediate-ca.crt")
-		require.NoError(t, err, "error creating target")
-		return repo.AddTarget(target, data.CanonicalTargetsRole)
-	})
-}
-
-// TestRemoveTargetToTargetRoleByDefault removes a target without specifying a
-// role from a repo.  Confirms that the changelist is created correctly for
-// the targets scope.
-func TestRemoveTargetToTargetRoleByDefault(t *testing.T) {
-	testRemoveTargetToTargetRoleByDefault(t, false)
-	testRemoveTargetToTargetRoleByDefault(t, true)
-}
-
-func testRemoveTargetToTargetRoleByDefault(t *testing.T, clearCache bool) {
-	ts, _, _ := simpleTestServer(t)
-	defer ts.Close()
-
-	repo, _ := initializeRepo(t, data.ECDSAKey, "docker.com/notary", ts.URL, false)
-	defer os.RemoveAll(repo.baseDir)
-
-	var rec *passRoleRecorder
-	if clearCache {
-		repo, rec = newRepoToTestRepo(t, repo, false)
-	}
-
-	testAddOrDeleteTarget(t, repo, changelist.ActionDelete, nil,
-		[]string{data.CanonicalTargetsRole})
-
-	if clearCache {
-		// no key creation or signing happened, because remove doesn't ever require signing
-		rec.requireCreated(t, nil)
-		rec.requireAsked(t, nil)
-	}
-}
-
-// TestRemoveTargetFromSpecifiedValidRoles removes a target from the specified
-// roles. Confirms that the changelist is created correctly, one for each of
-// the the specified roles as scopes.
-func TestRemoveTargetFromSpecifiedValidRoles(t *testing.T) {
-	testRemoveTargetFromSpecifiedValidRoles(t, false)
-	testRemoveTargetFromSpecifiedValidRoles(t, true)
-}
-
-func testRemoveTargetFromSpecifiedValidRoles(t *testing.T, clearCache bool) {
-	ts, _, _ := simpleTestServer(t)
-	defer ts.Close()
-
-	repo, _ := initializeRepo(t, data.ECDSAKey, "docker.com/notary", ts.URL, false)
-	defer os.RemoveAll(repo.baseDir)
-
-	var rec *passRoleRecorder
-	if clearCache {
-		repo, rec = newRepoToTestRepo(t, repo, false)
-	}
-
-	roleName := filepath.Join(data.CanonicalTargetsRole, "a")
-	testAddOrDeleteTarget(t, repo, changelist.ActionDelete,
-		[]string{
-			data.CanonicalTargetsRole,
-			roleName,
-		},
-		[]string{data.CanonicalTargetsRole, roleName})
-
-	if clearCache {
-		// no key creation or signing happened, because remove doesn't ever require signing
-		rec.requireCreated(t, nil)
-		rec.requireAsked(t, nil)
-	}
-}
-
-// TestRemoveTargetFromSpecifiedInvalidRoles expects errors to be returned if
-// removing a target to an invalid role.  If any of the roles are invalid,
-// no targets are removed from any roles.
-func TestRemoveTargetToSpecifiedInvalidRoles(t *testing.T) {
-	testRemoveTargetToSpecifiedInvalidRoles(t, false)
-	testRemoveTargetToSpecifiedInvalidRoles(t, true)
-}
-
-func testRemoveTargetToSpecifiedInvalidRoles(t *testing.T, clearCache bool) {
-	ts, _, _ := simpleTestServer(t)
-	defer ts.Close()
-
-	repo, _ := initializeRepo(t, data.ECDSAKey, "docker.com/notary", ts.URL, false)
-	defer os.RemoveAll(repo.baseDir)
-
-	var rec *passRoleRecorder
-	if clearCache {
-		repo, rec = newRepoToTestRepo(t, repo, false)
-	}
-
-	invalidRoles := []string{
-		data.CanonicalRootRole,
-		data.CanonicalSnapshotRole,
-		data.CanonicalTimestampRole,
-		"target/otherrole",
-		"otherrole",
-	}
-
-	for _, invalidRole := range invalidRoles {
-		err := repo.RemoveTarget("latest", data.CanonicalTargetsRole, invalidRole)
-		require.Error(t, err, "Expected an ErrInvalidRole error")
-		require.IsType(t, data.ErrInvalidRole{}, err)
-
-		changes := getChanges(t, repo)
-		require.Len(t, changes, 0)
-	}
-
-	if clearCache {
-		// no key creation or signing happened, because remove doesn't ever require signing
-		rec.requireCreated(t, nil)
-		rec.requireAsked(t, nil)
-	}
-}
-
-// TestRemoveTargetErrorWritingChanges expects errors writing a change to file
-// to be propagated.
-func TestRemoveTargetErrorWritingChanges(t *testing.T) {
-	testErrorWritingChangefiles(t, func(repo *NotaryRepository) error {
-		return repo.RemoveTarget("latest", data.CanonicalTargetsRole)
-	})
+func checkTargetWithRole(t *testing.T, expectedRole string, expectedTarget, actualTarget *TargetWithRole, args ...interface{}) {
+	copiedExpected := *expectedTarget
+	copiedExpected.Role = data.DelegationRole{}
+	copiedActual := *actualTarget
+	copiedActual.Role = data.DelegationRole{}
+	require.Equal(t, copiedExpected, copiedActual, args...)
+	require.Equal(t, expectedRole, actualTarget.Role.Name, args...)
 }
 
 // TestListTarget fakes serving signed metadata files over the test's
@@ -1202,7 +839,7 @@ func testListTarget(t *testing.T, rootType string) {
 	require.NoError(t, err, "could not open changelist")
 
 	// apply the changelist to the repo
-	err = applyChangelist(repo.tufRepo, nil, cl)
+	err = changelist.ApplyChangelist(repo.tufRepo, nil, cl)
 	require.NoError(t, err, "could not apply changelist")
 
 	fakeServerData(t, repo, mux, keys)
@@ -1217,23 +854,21 @@ func testListTarget(t *testing.T, rootType string) {
 
 	// the targets should both be found in the targets role
 	for _, foundTarget := range targets {
-		require.Equal(t, data.CanonicalTargetsRole, foundTarget.Role)
+		require.Equal(t, data.CanonicalTargetsRole, foundTarget.Role.Name)
 	}
 
 	// current should be first
-	require.True(t, reflect.DeepEqual(*currentTarget, targets[0].Target), "current target does not match")
-	require.True(t, reflect.DeepEqual(*latestTarget, targets[1].Target), "latest target does not match")
+	checkTargetWithRole(t, data.CanonicalTargetsRole, currentTarget, targets[0], "current target does not match")
+	checkTargetWithRole(t, data.CanonicalTargetsRole, latestTarget, targets[1], "latest target does not match")
 
 	// Also test GetTargetByName
 	newLatestTarget, err := repo.GetTargetByName("latest")
 	require.NoError(t, err)
-	require.Equal(t, data.CanonicalTargetsRole, newLatestTarget.Role)
-	require.True(t, reflect.DeepEqual(*latestTarget, newLatestTarget.Target), "latest target does not match")
+	checkTargetWithRole(t, data.CanonicalTargetsRole, latestTarget, newLatestTarget, "latest target does not match")
 
 	newCurrentTarget, err := repo.GetTargetByName("current")
 	require.NoError(t, err)
-	require.Equal(t, data.CanonicalTargetsRole, newCurrentTarget.Role)
-	require.True(t, reflect.DeepEqual(*currentTarget, newCurrentTarget.Target), "current target does not match")
+	checkTargetWithRole(t, data.CanonicalTargetsRole, currentTarget, newCurrentTarget, "current target does not match")
 }
 
 func testListTargetWithDelegates(t *testing.T, rootType string) {
@@ -1280,7 +915,7 @@ func testListTargetWithDelegates(t *testing.T, rootType string) {
 	require.NoError(t, err, "could not open changelist")
 
 	// apply the changelist to the repo, then clear it
-	err = applyChangelist(repo.tufRepo, nil, cl)
+	err = changelist.ApplyChangelist(repo.tufRepo, nil, cl)
 	require.NoError(t, err, "could not apply changelist")
 	require.NoError(t, cl.Clear(""))
 
@@ -1305,7 +940,7 @@ func testListTargetWithDelegates(t *testing.T, rootType string) {
 		filepath.Join(repo.baseDir, "tuf", filepath.FromSlash(repo.gun), "changelist"))
 	require.NoError(t, err, "could not open changelist")
 	// apply the changelist to the repo
-	err = applyChangelist(repo.tufRepo, nil, cl)
+	err = changelist.ApplyChangelist(repo.tufRepo, nil, cl)
 	require.NoError(t, err, "could not apply changelist")
 	// check the changelist was applied
 	_, ok = repo.tufRepo.Targets["targets/level1/level2"].Signed.Targets["level2"]
@@ -1323,18 +958,12 @@ func testListTargetWithDelegates(t *testing.T, rootType string) {
 	sort.Stable(targetSorter(targets))
 
 	// current should be first.
-	require.True(t, reflect.DeepEqual(*currentTarget, targets[0].Target), "current target does not match")
-	require.Equal(t, data.CanonicalTargetsRole, targets[0].Role)
-
-	require.True(t, reflect.DeepEqual(*latestTarget, targets[1].Target), "latest target does not match")
-	require.Equal(t, data.CanonicalTargetsRole, targets[1].Role)
+	checkTargetWithRole(t, data.CanonicalTargetsRole, currentTarget, targets[0], "current target does not match")
+	checkTargetWithRole(t, data.CanonicalTargetsRole, latestTarget, targets[1], "latest target does not match")
 
 	// This target shadows the "level2" target in level1/level2
-	require.True(t, reflect.DeepEqual(*level2Target, targets[2].Target), "level2 target does not match")
-	require.Equal(t, "targets/level2", targets[2].Role)
-
-	require.True(t, reflect.DeepEqual(*otherTarget, targets[3].Target), "other target does not match")
-	require.Equal(t, "targets/level1", targets[3].Role)
+	checkTargetWithRole(t, "targets/level2", level2Target, targets[2], "level2 target does not match")
+	checkTargetWithRole(t, "targets/level1", otherTarget, targets[3], "other target does not match")
 
 	// test listing with priority specified
 	targets, err = repo.ListTargets("targets/level1", data.CanonicalTargetsRole)
@@ -1346,51 +975,39 @@ func testListTargetWithDelegates(t *testing.T, rootType string) {
 	sort.Stable(targetSorter(targets))
 
 	// current (in delegated role) should be first
-	require.True(t, reflect.DeepEqual(*delegatedTarget, targets[0].Target), "current target does not match")
-	require.Equal(t, "targets/level1", targets[0].Role)
-
-	require.True(t, reflect.DeepEqual(*latestTarget, targets[1].Target), "latest target does not match")
-	require.Equal(t, data.CanonicalTargetsRole, targets[1].Role)
+	checkTargetWithRole(t, "targets/level1", delegatedTarget, targets[0], "current target does not match")
+	checkTargetWithRole(t, data.CanonicalTargetsRole, latestTarget, targets[1], "latest target does not match")
 
 	// Now the level1/level2 target shadows the level2 target
-	require.True(t, reflect.DeepEqual(*nestedTarget, targets[2].Target), "level1/level2 target does not match")
-	require.Equal(t, "targets/level1/level2", targets[2].Role)
-
-	require.True(t, reflect.DeepEqual(*otherTarget, targets[3].Target), "other target does not match")
-	require.Equal(t, "targets/level1", targets[3].Role)
+	checkTargetWithRole(t, "targets/level1/level2", nestedTarget, targets[2], "level1/level2 target does not match")
+	checkTargetWithRole(t, "targets/level1", otherTarget, targets[3], "other target does not match")
 
 	// Also test GetTargetByName
 	newLatestTarget, err := repo.GetTargetByName("latest")
 	require.NoError(t, err)
-	require.True(t, reflect.DeepEqual(*latestTarget, newLatestTarget.Target), "latest target does not match")
-	require.Equal(t, data.CanonicalTargetsRole, newLatestTarget.Role)
+	checkTargetWithRole(t, data.CanonicalTargetsRole, latestTarget, newLatestTarget, "latest target does not match")
 
 	newCurrentTarget, err := repo.GetTargetByName("current", "targets/level1", "targets")
 	require.NoError(t, err)
-	require.True(t, reflect.DeepEqual(*delegatedTarget, newCurrentTarget.Target), "current target does not match")
-	require.Equal(t, "targets/level1", newCurrentTarget.Role)
+	checkTargetWithRole(t, "targets/level1", delegatedTarget, newCurrentTarget, "current target does not match")
 
 	newOtherTarget, err := repo.GetTargetByName("other")
 	require.NoError(t, err)
-	require.True(t, reflect.DeepEqual(*otherTarget, newOtherTarget.Target), "other target does not match")
-	require.Equal(t, "targets/level1", newOtherTarget.Role)
+	checkTargetWithRole(t, "targets/level1", otherTarget, newOtherTarget, "other target does not match")
 
 	newLevel2Target, err := repo.GetTargetByName("level2")
 	require.NoError(t, err)
-	require.True(t, reflect.DeepEqual(*level2Target, newLevel2Target.Target), "level2 target does not match")
-	require.Equal(t, "targets/level2", newLevel2Target.Role)
+	checkTargetWithRole(t, "targets/level2", level2Target, newLevel2Target, "level2 target does not match")
 
 	// Shadow by prioritizing level1, but exclude level1/level2, so we should still get targets/level2's level2 target
 	newLevel2Target, err = repo.GetTargetByName("level2", "targets/level1", "targets/level2", "targets/level1/level2")
 	require.NoError(t, err)
-	require.True(t, reflect.DeepEqual(*level2Target, newLevel2Target.Target), "level2 target does not match")
-	require.Equal(t, "targets/level2", newLevel2Target.Role)
+	checkTargetWithRole(t, "targets/level2", level2Target, newLevel2Target, "level2 target does not match")
 
 	// Prioritize level1 to get level1/level2's level2 target
 	newLevel2Target, err = repo.GetTargetByName("level2", "targets/level1")
 	require.NoError(t, err)
-	require.True(t, reflect.DeepEqual(*nestedTarget, newLevel2Target.Target), "level2 target does not match")
-	require.Equal(t, "targets/level1/level2", newLevel2Target.Role)
+	checkTargetWithRole(t, "targets/level1/level2", nestedTarget, newLevel2Target, "level2 target does not match")
 }
 
 func TestListTargetRestrictsDelegationPaths(t *testing.T) {
@@ -1430,7 +1047,7 @@ func TestListTargetRestrictsDelegationPaths(t *testing.T) {
 	require.NoError(t, err, "could not open changelist")
 
 	// apply the changelist to the repo
-	err = applyChangelist(repo.tufRepo, nil, cl)
+	err = changelist.ApplyChangelist(repo.tufRepo, nil, cl)
 	require.NoError(t, err, "could not apply changelist")
 
 	require.NoError(t, cl.Clear(""))
@@ -1452,7 +1069,7 @@ func TestListTargetRestrictsDelegationPaths(t *testing.T) {
 	require.NoError(t, err, "could not open changelist")
 
 	// apply the changelist to the repo
-	err = applyChangelist(repo.tufRepo, nil, cl)
+	err = changelist.ApplyChangelist(repo.tufRepo, nil, cl)
 	require.NoError(t, err, "could not apply changelist")
 
 	fakeServerData(t, repo, mux, keys)
@@ -1471,10 +1088,10 @@ func TestListTargetRestrictsDelegationPaths(t *testing.T) {
 	for _, tgts := range targets {
 		switch tgts.Name {
 		case "level1-target":
-			require.Equal(t, "targets/level1", tgts.Role)
+			require.Equal(t, "targets/level1", tgts.Role.Name)
 			foundLevel1 = true
 		case "level1-level2-target":
-			require.Equal(t, "targets/level1/level2", tgts.Role)
+			require.Equal(t, "targets/level1/level2", tgts.Role.Name)
 			foundLevel2 = true
 		}
 	}
@@ -1486,12 +1103,12 @@ func TestListTargetRestrictsDelegationPaths(t *testing.T) {
 	tgt, err := repo.GetTargetByName("level1-target", "targets/level1")
 	require.NoError(t, err)
 	require.NotNil(t, tgt)
-	require.Equal(t, tgt.Role, "targets/level1")
+	require.Equal(t, tgt.Role.Name, "targets/level1")
 
 	tgt, err = repo.GetTargetByName("level1-level2-target", "targets/level1")
 	require.NoError(t, err)
 	require.NotNil(t, tgt)
-	require.Equal(t, tgt.Role, "targets/level1/level2")
+	require.Equal(t, tgt.Role.Name, "targets/level1/level2")
 
 	tgt, err = repo.GetTargetByName("level2-target", "targets/level1/level2")
 	require.Error(t, err)
@@ -1560,14 +1177,14 @@ func testGetChangelist(t *testing.T, rootType string) {
 
 	repo, _ := initializeRepo(t, rootType, "docker.com/notary", ts.URL, false)
 	defer os.RemoveAll(repo.baseDir)
-	require.Len(t, getChanges(t, repo), 0, "No changes should be in changelist yet")
+	require.Len(t, repo.cl.List(), 0, "No changes should be in changelist yet")
 
 	// Create 2 targets
 	addTarget(t, repo, "latest", "../fixtures/intermediate-ca.crt")
 	addTarget(t, repo, "current", "../fixtures/intermediate-ca.crt")
 
 	// Test loading changelist
-	chgs := getChanges(t, repo)
+	chgs := repo.cl.List()
 	require.Len(t, chgs, 2, "Wrong number of changes returned from changelist")
 
 	changes := make(map[string]changelist.Change)
@@ -1743,7 +1360,7 @@ func requirePublishToRolesSucceeds(t *testing.T, repo1 *NotaryRepository,
 	publishToRoles []string, expectedPublishedRoles []string) {
 
 	// were there unpublished changes before?
-	changesOffset := len(getChanges(t, repo1))
+	changesOffset := len(repo1.cl.List())
 
 	// Create 2 targets - (actually 3, but we delete 1)
 	addTarget(t, repo1, "toDelete", "../fixtures/intermediate-ca.crt", publishToRoles...)
@@ -1755,13 +1372,13 @@ func requirePublishToRolesSucceeds(t *testing.T, repo1 *NotaryRepository,
 
 	// if no roles are provided, the default role is target
 	numRoles := int(math.Max(1, float64(len(publishToRoles))))
-	require.Len(t, getChanges(t, repo1), changesOffset+4*numRoles,
+	require.Len(t, repo1.cl.List(), changesOffset+4*numRoles,
 		"wrong number of changelist files found")
 
 	// Now test Publish
 	err := repo1.Publish()
 	require.NoError(t, err)
-	require.Len(t, getChanges(t, repo1), 0, "wrong number of changelist files found")
+	require.Len(t, repo1.cl.List(), 0, "wrong number of changelist files found")
 
 	// use another repo to check metadata
 	repo2, _ := newRepoToTestRepo(t, repo1, true)
@@ -1778,21 +1395,17 @@ func requirePublishToRolesSucceeds(t *testing.T, repo1 *NotaryRepository,
 
 			sort.Stable(targetSorter(targets))
 
-			require.True(t, reflect.DeepEqual(*currentTarget, targets[0].Target), "current target does not match")
-			require.Equal(t, role, targets[0].Role)
-			require.True(t, reflect.DeepEqual(*latestTarget, targets[1].Target), "latest target does not match")
-			require.Equal(t, role, targets[1].Role)
+			checkTargetWithRole(t, role, currentTarget, targets[0], "current target does not match")
+			checkTargetWithRole(t, role, latestTarget, targets[1], "latest target does not match")
 
 			// Also test GetTargetByName
 			newLatestTarget, err := repo.GetTargetByName("latest", role)
 			require.NoError(t, err)
-			require.True(t, reflect.DeepEqual(*latestTarget, newLatestTarget.Target), "latest target does not match")
-			require.Equal(t, role, newLatestTarget.Role)
+			checkTargetWithRole(t, role, latestTarget, newLatestTarget, "latest target does not match")
 
 			newCurrentTarget, err := repo.GetTargetByName("current", role)
 			require.NoError(t, err)
-			require.True(t, reflect.DeepEqual(*currentTarget, newCurrentTarget.Target), "current target does not match")
-			require.Equal(t, role, newCurrentTarget.Role)
+			checkTargetWithRole(t, role, currentTarget, newCurrentTarget, "current target does not match")
 		}
 	}
 }
@@ -1830,7 +1443,8 @@ func testPublishAfterPullServerHasSnapshotKey(t *testing.T, rootType string) {
 	// list, so that the snapshot metadata is pulled from server
 	targets, err := repo.ListTargets(data.CanonicalTargetsRole)
 	require.NoError(t, err)
-	require.Equal(t, []*TargetWithRole{{Target: *published, Role: data.CanonicalTargetsRole}}, targets)
+	require.Len(t, targets, 1)
+	checkTargetWithRole(t, data.CanonicalTargetsRole, published, targets[0])
 	// listing downloaded the timestamp and snapshot metadata info
 	requireRepoHasExpectedMetadata(t, repo, data.CanonicalTimestampRole, true)
 	requireRepoHasExpectedMetadata(t, repo, data.CanonicalSnapshotRole, true)
@@ -2089,7 +1703,7 @@ func testPublishDelegations(t *testing.T, clearCache, x509Keys bool) {
 			repo1.AddDelegation(delgName, []data.PublicKey{delgKey}, []string{""}),
 			"error creating delegation")
 	}
-	require.Len(t, getChanges(t, repo1), 6, "wrong number of changelist files found")
+	require.Len(t, repo1.cl.List(), 6, "wrong number of changelist files found")
 
 	var rec *passRoleRecorder
 	if clearCache {
@@ -2097,7 +1711,7 @@ func testPublishDelegations(t *testing.T, clearCache, x509Keys bool) {
 	}
 
 	require.NoError(t, repo1.Publish())
-	require.Len(t, getChanges(t, repo1), 0, "wrong number of changelist files found")
+	require.Len(t, repo1.cl.List(), 0, "wrong number of changelist files found")
 
 	if clearCache {
 		// when publishing, only the parents of the delegations created need to be signed
@@ -2110,9 +1724,9 @@ func testPublishDelegations(t *testing.T, clearCache, x509Keys bool) {
 	require.NoError(t,
 		repo1.AddDelegation("targets/z/y", []data.PublicKey{delgKey}, []string{""}),
 		"error creating delegation")
-	require.Len(t, getChanges(t, repo1), 2, "wrong number of changelist files found")
+	require.Len(t, repo1.cl.List(), 2, "wrong number of changelist files found")
 	require.Error(t, repo1.Publish())
-	require.Len(t, getChanges(t, repo1), 2, "wrong number of changelist files found")
+	require.Len(t, repo1.cl.List(), 2, "wrong number of changelist files found")
 
 	if clearCache {
 		rec.requireAsked(t, nil)
@@ -2191,11 +1805,11 @@ func testPublishTargetsDelegationScopeFailIfNoKeys(t *testing.T, clearCache bool
 	// add a target to targets/a/b - no role b, so it falls back on a, which
 	// exists but there is no signing key for
 	addTarget(t, repo, "latest", "../fixtures/intermediate-ca.crt", "targets/a/b")
-	require.Len(t, getChanges(t, repo), 1, "wrong number of changelist files found")
+	require.Len(t, repo.cl.List(), 1, "wrong number of changelist files found")
 
 	// Now Publish should fail
 	require.Error(t, repo.Publish())
-	require.Len(t, getChanges(t, repo), 1, "wrong number of changelist files found")
+	require.Len(t, repo.cl.List(), 1, "wrong number of changelist files found")
 	if clearCache {
 		rec.requireAsked(t, nil)
 		rec.clear()
@@ -2677,14 +2291,14 @@ func requireRotationSuccessful(t *testing.T, repo1 *NotaryRepository, keysToRota
 	}
 
 	// Confirm no changelists get published
-	changesPre := getChanges(t, repo1)
+	changesPre := repo1.cl.List()
 
 	// Do rotation
 	for role, serverManaged := range keysToRotate {
 		require.NoError(t, repo1.RotateKey(role, serverManaged))
 	}
 
-	changesPost := getChanges(t, repo1)
+	changesPost := repo1.cl.List()
 	require.Equal(t, changesPre, changesPost)
 
 	// Download data from remote and check that keys have changed
@@ -2947,96 +2561,6 @@ func TestRemoteServerUnavailableNoLocalCache(t *testing.T) {
 	require.IsType(t, store.ErrServerUnavailable{}, err)
 }
 
-// AddDelegation creates a valid changefile (rejects invalid delegation names,
-// but does not check the delegation hierarchy).  When applied, the change adds
-// a new delegation role with the correct keys.
-func TestAddDelegationChangefileValid(t *testing.T) {
-	gun := "docker.com/notary"
-	ts, _, _ := simpleTestServer(t)
-	defer ts.Close()
-
-	repo, _ := initializeRepo(t, data.ECDSAKey, gun, ts.URL, false)
-	defer os.RemoveAll(repo.baseDir)
-
-	targetKeyIds := repo.CryptoService.ListKeys(data.CanonicalTargetsRole)
-	require.NotEmpty(t, targetKeyIds)
-	targetPubKey := repo.CryptoService.GetKey(targetKeyIds[0])
-	require.NotNil(t, targetPubKey)
-
-	err := repo.AddDelegation("root", []data.PublicKey{targetPubKey}, []string{""})
-	require.Error(t, err)
-	require.IsType(t, data.ErrInvalidRole{}, err)
-	require.Empty(t, getChanges(t, repo))
-
-	// to show that adding does not care about the hierarchy
-	err = repo.AddDelegation("targets/a/b/c", []data.PublicKey{targetPubKey}, []string{""})
-	require.NoError(t, err)
-
-	// ensure that the changefiles is correct
-	changes := getChanges(t, repo)
-	require.Len(t, changes, 2)
-	require.Equal(t, changelist.ActionCreate, changes[0].Action())
-	require.Equal(t, "targets/a/b/c", changes[0].Scope())
-	require.Equal(t, changelist.TypeTargetsDelegation, changes[0].Type())
-	require.Equal(t, changelist.ActionCreate, changes[1].Action())
-	require.Equal(t, "targets/a/b/c", changes[1].Scope())
-	require.Equal(t, changelist.TypeTargetsDelegation, changes[1].Type())
-	require.Equal(t, "", changes[1].Path())
-	require.NotEmpty(t, changes[0].Content())
-}
-
-// The changefile produced by AddDelegation, when applied, actually adds
-// the delegation to the repo (assuming the delegation hierarchy is correct -
-// tests for change application validation are in helpers_test.go)
-func TestAddDelegationChangefileApplicable(t *testing.T) {
-	gun := "docker.com/notary"
-	ts, _, _ := simpleTestServer(t)
-	defer ts.Close()
-
-	repo, _ := initializeRepo(t, data.ECDSAKey, gun, ts.URL, false)
-	defer os.RemoveAll(repo.baseDir)
-
-	targetKeyIds := repo.CryptoService.ListKeys(data.CanonicalTargetsRole)
-	require.NotEmpty(t, targetKeyIds)
-	targetPubKey := repo.CryptoService.GetKey(targetKeyIds[0])
-	require.NotNil(t, targetPubKey)
-
-	// this hierarchy has to be right to be applied
-	err := repo.AddDelegation("targets/a", []data.PublicKey{targetPubKey}, []string{""})
-	require.NoError(t, err)
-	changes := getChanges(t, repo)
-	require.Len(t, changes, 2)
-
-	// ensure that it can be applied correctly
-	err = applyTargetsChange(repo.tufRepo, nil, changes[0])
-	require.NoError(t, err)
-
-	targetRole := repo.tufRepo.Targets[data.CanonicalTargetsRole]
-	require.Len(t, targetRole.Signed.Delegations.Roles, 1)
-	require.Len(t, targetRole.Signed.Delegations.Keys, 1)
-
-	_, ok := targetRole.Signed.Delegations.Keys[targetPubKey.ID()]
-	require.True(t, ok)
-
-	newDelegationRole := targetRole.Signed.Delegations.Roles[0]
-	require.Len(t, newDelegationRole.KeyIDs, 1)
-	require.Equal(t, targetPubKey.ID(), newDelegationRole.KeyIDs[0])
-	require.Equal(t, "targets/a", newDelegationRole.Name)
-}
-
-// TestAddDelegationErrorWritingChanges expects errors writing a change to file
-// to be propagated.
-func TestAddDelegationErrorWritingChanges(t *testing.T) {
-	testErrorWritingChangefiles(t, func(repo *NotaryRepository) error {
-		targetKeyIds := repo.CryptoService.ListKeys(data.CanonicalTargetsRole)
-		require.NotEmpty(t, targetKeyIds)
-		targetPubKey := repo.CryptoService.GetKey(targetKeyIds[0])
-		require.NotNil(t, targetPubKey)
-
-		return repo.AddDelegation("targets/a", []data.PublicKey{targetPubKey}, []string{""})
-	})
-}
-
 // RemoveDelegation rejects attempts to remove invalidly-named delegations,
 // but otherwise does not validate the name of the delegation to remove.  This
 // test ensures that the changefile generated by RemoveDelegation is correct.
@@ -3053,184 +2577,19 @@ func TestRemoveDelegationChangefileValid(t *testing.T) {
 	err := repo.RemoveDelegationKeys("root", []string{rootKeyID})
 	require.Error(t, err)
 	require.IsType(t, data.ErrInvalidRole{}, err)
-	require.Empty(t, getChanges(t, repo))
+	require.Empty(t, repo.cl.List())
 
 	// to demonstrate that so long as the delegation name is valid, the
 	// existence of the delegation doesn't matter
 	require.NoError(t, repo.RemoveDelegationKeys("targets/a/b/c", []string{rootKeyID}))
 
 	// ensure that the changefile is correct
-	changes := getChanges(t, repo)
+	changes := repo.cl.List()
 	require.Len(t, changes, 1)
 	require.Equal(t, changelist.ActionUpdate, changes[0].Action())
 	require.Equal(t, "targets/a/b/c", changes[0].Scope())
 	require.Equal(t, changelist.TypeTargetsDelegation, changes[0].Type())
 	require.Equal(t, "", changes[0].Path())
-}
-
-// The changefile produced by RemoveDelegationKeys, when applied, actually removes
-// the delegation from the repo (assuming the repo exists - tests for
-// change application validation are in helpers_test.go)
-func TestRemoveDelegationChangefileApplicable(t *testing.T) {
-	gun := "docker.com/notary"
-	ts, _, _ := simpleTestServer(t)
-	defer ts.Close()
-
-	repo, rootKeyID := initializeRepo(t, data.ECDSAKey, gun, ts.URL, false)
-	defer os.RemoveAll(repo.baseDir)
-	rootPubKey := repo.CryptoService.GetKey(rootKeyID)
-	require.NotNil(t, rootPubKey)
-
-	// add a delegation first so it can be removed
-	require.NoError(t, repo.AddDelegation("targets/a", []data.PublicKey{rootPubKey}, []string{""}))
-	changes := getChanges(t, repo)
-	require.Len(t, changes, 2)
-	require.NoError(t, applyTargetsChange(repo.tufRepo, nil, changes[0]))
-	require.NoError(t, applyTargetsChange(repo.tufRepo, nil, changes[1]))
-
-	targetRole := repo.tufRepo.Targets[data.CanonicalTargetsRole]
-	require.Len(t, targetRole.Signed.Delegations.Roles, 1)
-	require.Len(t, targetRole.Signed.Delegations.Keys, 1)
-
-	// now remove it
-	rootKeyCanonicalID, err := utils.CanonicalKeyID(rootPubKey)
-	require.NoError(t, err)
-	require.NoError(t, repo.RemoveDelegationKeys("targets/a", []string{rootKeyCanonicalID}))
-	changes = getChanges(t, repo)
-	require.Len(t, changes, 3)
-	require.NoError(t, applyTargetsChange(repo.tufRepo, nil, changes[2]))
-
-	targetRole = repo.tufRepo.Targets[data.CanonicalTargetsRole]
-	require.Len(t, targetRole.Signed.Delegations.Roles, 1)
-	require.Empty(t, targetRole.Signed.Delegations.Keys)
-}
-
-// The changefile with the ClearAllPaths key set, when applied, actually removes
-// all paths from the specified delegation in the repo (assuming the repo and delegation exist)
-func TestClearAllPathsDelegationChangefileApplicable(t *testing.T) {
-	gun := "docker.com/notary"
-	ts, _, _ := simpleTestServer(t)
-	defer ts.Close()
-
-	repo, rootKeyID := initializeRepo(t, data.ECDSAKey, gun, ts.URL, false)
-	defer os.RemoveAll(repo.baseDir)
-	rootPubKey := repo.CryptoService.GetKey(rootKeyID)
-	require.NotNil(t, rootPubKey)
-
-	// add a delegation first so it can be removed
-	require.NoError(t, repo.AddDelegation("targets/a", []data.PublicKey{rootPubKey}, []string{"abc,123,xyz,path"}))
-	changes := getChanges(t, repo)
-	require.Len(t, changes, 2)
-	require.NoError(t, applyTargetsChange(repo.tufRepo, nil, changes[0]))
-	require.NoError(t, applyTargetsChange(repo.tufRepo, nil, changes[1]))
-
-	// now clear paths it
-	require.NoError(t, repo.ClearDelegationPaths("targets/a"))
-	changes = getChanges(t, repo)
-	require.Len(t, changes, 3)
-	require.NoError(t, applyTargetsChange(repo.tufRepo, nil, changes[2]))
-
-	delgRoles := repo.tufRepo.Targets[data.CanonicalTargetsRole].Signed.Delegations.Roles
-	require.Len(t, delgRoles, 1)
-	require.Len(t, delgRoles[0].Paths, 0)
-}
-
-// TestFullAddDelegationChangefileApplicable generates a single changelist with AddKeys and AddPaths set,
-// (in the old style of AddDelegation) and tests that all of its changes are reflected on publish
-func TestFullAddDelegationChangefileApplicable(t *testing.T) {
-	gun := "docker.com/notary"
-	ts, _, _ := simpleTestServer(t)
-	defer ts.Close()
-
-	repo, rootKeyID := initializeRepo(t, data.ECDSAKey, gun, ts.URL, false)
-	defer os.RemoveAll(repo.baseDir)
-	rootPubKey := repo.CryptoService.GetKey(rootKeyID)
-	require.NotNil(t, rootPubKey)
-
-	key2, err := repo.CryptoService.Create("user", repo.gun, data.ECDSAKey)
-	require.NoError(t, err)
-
-	delegationName := "targets/a"
-
-	// manually create the changelist object to load multiple keys
-	tdJSON, err := json.Marshal(&changelist.TUFDelegation{
-		NewThreshold: notary.MinThreshold,
-		AddKeys:      data.KeyList([]data.PublicKey{rootPubKey, key2}),
-		AddPaths:     []string{"abc", "123", "xyz"},
-	})
-	require.NoError(t, err)
-	change := newCreateDelegationChange(delegationName, tdJSON)
-	cl, err := changelist.NewFileChangelist(filepath.Join(repo.tufRepoPath, "changelist"))
-	require.NoError(t, err)
-	addChange(cl, change, delegationName)
-
-	changes := getChanges(t, repo)
-	require.Len(t, changes, 1)
-	require.NoError(t, applyTargetsChange(repo.tufRepo, nil, changes[0]))
-
-	delgRoles := repo.tufRepo.Targets[data.CanonicalTargetsRole].Signed.Delegations.Roles
-	require.Len(t, delgRoles, 1)
-	require.Len(t, delgRoles[0].Paths, 3)
-	require.Len(t, delgRoles[0].KeyIDs, 2)
-	require.Equal(t, delgRoles[0].Name, delegationName)
-}
-
-// TestFullRemoveDelegationChangefileApplicable generates a single changelist with RemoveKeys and RemovePaths set,
-// (in the old style of RemoveDelegation) and tests that all of its changes are reflected on publish
-func TestFullRemoveDelegationChangefileApplicable(t *testing.T) {
-	gun := "docker.com/notary"
-	ts, _, _ := simpleTestServer(t)
-	defer ts.Close()
-
-	repo, rootKeyID := initializeRepo(t, data.ECDSAKey, gun, ts.URL, false)
-	defer os.RemoveAll(repo.baseDir)
-	rootPubKey := repo.CryptoService.GetKey(rootKeyID)
-	require.NotNil(t, rootPubKey)
-
-	key2, err := repo.CryptoService.Create("user", repo.gun, data.ECDSAKey)
-	require.NoError(t, err)
-	key2CanonicalID, err := utils.CanonicalKeyID(key2)
-	require.NoError(t, err)
-
-	delegationName := "targets/a"
-
-	require.NoError(t, repo.AddDelegation(delegationName, []data.PublicKey{rootPubKey, key2}, []string{"abc", "123"}))
-	changes := getChanges(t, repo)
-	require.Len(t, changes, 2)
-	require.NoError(t, applyTargetsChange(repo.tufRepo, nil, changes[0]))
-	require.NoError(t, applyTargetsChange(repo.tufRepo, nil, changes[1]))
-
-	targetRole := repo.tufRepo.Targets[data.CanonicalTargetsRole]
-	require.Len(t, targetRole.Signed.Delegations.Roles, 1)
-	require.Len(t, targetRole.Signed.Delegations.Keys, 2)
-
-	// manually create the changelist object to load multiple keys
-	tdJSON, err := json.Marshal(&changelist.TUFDelegation{
-		RemoveKeys:  []string{key2CanonicalID},
-		RemovePaths: []string{"abc", "123"},
-	})
-	require.NoError(t, err)
-	change := newUpdateDelegationChange(delegationName, tdJSON)
-	cl, err := changelist.NewFileChangelist(filepath.Join(repo.tufRepoPath, "changelist"))
-	require.NoError(t, err)
-	addChange(cl, change, delegationName)
-
-	changes = getChanges(t, repo)
-	require.Len(t, changes, 3)
-	require.NoError(t, applyTargetsChange(repo.tufRepo, nil, changes[2]))
-
-	delgRoles := repo.tufRepo.Targets[data.CanonicalTargetsRole].Signed.Delegations.Roles
-	require.Len(t, delgRoles, 1)
-	require.Len(t, delgRoles[0].Paths, 0)
-	require.Len(t, delgRoles[0].KeyIDs, 1)
-}
-
-// TestRemoveDelegationErrorWritingChanges expects errors writing a change to
-// file to be propagated.
-func TestRemoveDelegationErrorWritingChanges(t *testing.T) {
-	testErrorWritingChangefiles(t, func(repo *NotaryRepository) error {
-		return repo.RemoveDelegationKeysAndPaths("targets/a", []string{""}, []string{})
-	})
 }
 
 // TestBootstrapClientBadURL checks that bootstrapClient correctly
@@ -3651,7 +3010,7 @@ func TestGetAllTargetInfo(t *testing.T) {
 	require.NoError(t, err, "could not open changelist")
 
 	// apply the changelist to the repo, then clear it
-	err = applyChangelist(repo.tufRepo, nil, cl)
+	err = changelist.ApplyChangelist(repo.tufRepo, nil, cl)
 	require.NoError(t, err, "could not apply changelist")
 	require.NoError(t, cl.Clear(""))
 
@@ -3677,7 +3036,7 @@ func TestGetAllTargetInfo(t *testing.T) {
 		filepath.Join(repo.baseDir, "tuf", filepath.FromSlash(repo.gun), "changelist"))
 	require.NoError(t, err, "could not open changelist")
 	// apply the changelist to the repo
-	err = applyChangelist(repo.tufRepo, nil, cl)
+	err = changelist.ApplyChangelist(repo.tufRepo, nil, cl)
 	require.NoError(t, err, "could not apply changelist")
 	// check the changelist was applied
 	_, ok = repo.tufRepo.Targets["targets/level1/level2"].Signed.Targets["level2"]
@@ -3794,10 +3153,10 @@ func checkSignatures(t *testing.T, targetSignatureData []TargetSignedStruct, exp
 	makeSureWeHitEachCase := make(map[expectation]struct{})
 
 	for _, tarSigStr := range targetSignatureData {
-		dataPoint := expectation{role: tarSigStr.Role.Name, target: tarSigStr.Target.Name}
+		dataPoint := expectation{role: tarSigStr.Target.Role.Name, target: tarSigStr.Target.Name}
 		exp, ok := allExpected[dataPoint]
 		require.True(t, ok)
-		require.Equal(t, exp.Target, tarSigStr.Target)
+		checkTargetWithRole(t, tarSigStr.Target.Role.Name, &exp.Target, &tarSigStr.Target)
 		require.Len(t, tarSigStr.Signatures, 1)
 		require.Equal(t, exp.Signatures[0].KeyID, tarSigStr.Signatures[0].KeyID)
 		makeSureWeHitEachCase[dataPoint] = struct{}{}

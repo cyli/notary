@@ -1,10 +1,9 @@
 version: "3.1"
 services:
   server:
-    build:
-      context: .
-      dockerfile: server.Dockerfile
-    image: dockersecurity/dc17-notary:server-latest
+    image: dockersecurity/notary_autobuilds:server-latest
+    deploy:
+      replicas: 1
     networks:
       - mdb
       - sig
@@ -21,10 +20,7 @@ services:
       - notary-server.crt
       - notary-server.key
   signer:
-    build:
-      context: .
-      dockerfile: signer.Dockerfile
-    image: dockersecurity/dc17-notary:signer-latest
+    image: dockersecurity/notary_autobuilds:signer-latest
     deploy:
       replicas: 1
     networks:
@@ -57,23 +53,23 @@ services:
 volumes:
   notary_data:
     external: false
-secrets:
-  signer-config.json:
-      file: /Users/cyli/go/src/github.com/docker/notary/fixtures/signer-config.json
-  server-config.json:
-      file: /Users/cyli/go/src/github.com/docker/notary/fixtures/server-config.json
-  root-ca.crt:
-      file: /Users/cyli/go/src/github.com/docker/notary/fixtures/root-ca.crt
-  notary-server.crt:
-      file: /Users/cyli/go/src/github.com/docker/notary/fixtures/notary-server.crt
-  notary-server.key:
-      file: /Users/cyli/go/src/github.com/docker/notary/fixtures/notary-server.key
-  notary-signer.crt:
-      file: /Users/cyli/go/src/github.com/docker/notary/fixtures/notary-signer.crt
-  notary-signer.key:
-      file: /Users/cyli/go/src/github.com/docker/notary/fixtures/notary-signer.key
 networks:
   mdb:
     external: false
   sig:
     external: false
+secrets:
+  signer-config.json:
+      external: true
+  server-config.json:
+      external: true
+  root-ca.crt:
+      external: true
+  notary-server.crt:
+      external: true
+  notary-server.key:
+      external: true
+  notary-signer.crt:
+      external: true
+  notary-signer.key:
+      external: true

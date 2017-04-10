@@ -1,20 +1,17 @@
 {
 	"server": {
 		"http_addr": ":4443",
-		"tls_key_file": "./notary-server.key",
-		"tls_cert_file": "./notary-server.crt"
+		"tls_key_file": "/run/secrets/notary-server.key",
+		"tls_cert_file": "/run/secrets/notary-server.crt"
 	},
 	"trust_service": {
 		"type": "remote",
 		"hostname": "notarysigner",
 		"port": "7899",
-		"tls_ca_file": "./root-ca.crt",
+		"tls_ca_file": "/run/secrets/root-ca.crt",
 		"key_algorithm": "ecdsa",
-		"tls_client_cert": "./notary-server.crt",
-		"tls_client_key": "./notary-server.key"
-	},
-	"logging": {
-		"level": "debug"
+		"tls_client_cert": "/run/secrets/notary-server.crt",
+		"tls_client_key": "/run/secrets/notary-server.key"
 	},
 	"storage": {
 		"backend": "mysql",

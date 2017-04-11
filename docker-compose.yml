@@ -1,10 +1,9 @@
 version: "3.1"
 services:
   server:
-    build:
-      context: .
-      dockerfile: server.Dockerfile
     image: dockersecurity/dc17-notary:server-latest
+    deploy:
+      replicas: 1
     networks:
       - mdb
       - sig
@@ -54,9 +53,6 @@ services:
       - TERM=dumb
       - MYSQL_ALLOW_EMPTY_PASSWORD="true"
     command: mysqld --innodb_file_per_table
-volumes:
-  notary_data:
-    external: false
 secrets:
   signer-config.json:
       file: /Users/cyli/go/src/github.com/docker/notary/fixtures/signer-config.json
@@ -76,4 +72,7 @@ networks:
   mdb:
     external: false
   sig:
+    external: false
+volumes:
+  notary_data:
     external: false

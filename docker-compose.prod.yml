@@ -1,7 +1,8 @@
 version: "3.1"
 services:
+  # on networks "sig", "mdb"
   server:
-    image: dockersecurity/notary_autobuilds:server-latest
+    image: dockersecurity/dc17-notary:server-latest
     deploy:
       replicas: 1
     networks:
@@ -19,12 +20,13 @@ services:
       - root-ca.crt
       - notary-server.crt
       - notary-server.key
+  # on networks "sig", "sdb"
   signer:
-    image: dockersecurity/notary_autobuilds:signer-latest
+    image: dockersecurity/dc17-notary:signer-latest
     deploy:
       replicas: 1
     networks:
-      mdb:
+      sdb:
       sig:
         aliases:
           - notarysigner
@@ -37,7 +39,13 @@ services:
       - root-ca.crt
       - notary-signer.crt
       - notary-signer.key
-  mysql:
+
+
+
+
+
+  # on network "mdb"
+  metadata_mysql:
     image: mariadb:10.1.10
     deploy:
       replicas: 1
@@ -45,19 +53,28 @@ services:
       - mdb
     volumes:
       - /Users/cyli/go/src/github.com/docker/notary/notarysql/mysql-initdb.d:/docker-entrypoint-initdb.d
-      - notary_data:/var/lib/mysql
+      - notary_metadata:/var/lib/mysql
     environment:
       - TERM=dumb
       - MYSQL_ALLOW_EMPTY_PASSWORD="true"
     command: mysqld --innodb_file_per_table
-volumes:
-  notary_data:
-    external: false
-networks:
-  mdb:
-    external: false
-  sig:
-    external: false
+    # on network "mdb"
+    # on network "mdb"
+
+  # on network "sdb"
+  signer_mysql:
+    image: mariadb:10.1.10
+    deploy:
+      replicas: 1
+    networks:
+      - sdb
+    volumes:
+      - /Users/cyli/go/src/github.com/docker/notary/notarysql/mysql-initdb.d:/docker-entrypoint-initdb.d
+      - notary_key_data:/var/lib/mysql
+    environment:
+      - TERM=dumb
+      - MYSQL_ALLOW_EMPTY_PASSWORD="true"
+    command: mysqld --innodb_file_per_table
 secrets:
   signer-config.json:
       external: true
@@ -73,3 +90,13 @@ secrets:
       external: true
   notary-signer.key:
       external: true
+volumes:
+  notary_data:
+    external: false
+networks:
+  sdb:
+    external: false
+  mdb:
+    external: false
+  sig:
+    external: false

@@ -19,14 +19,9 @@ RUN go install \
     ${NOTARYPKG}/cmd/notary-signer
 
 
-FROM busybox:latest
+FROM alpine:latest
 MAINTAINER David Lawrence "david.lawrence@docker.com"
 
-# the ln is for compatibility with the docker-compose.yml, making these
-# images a straight swap for the those built in the compose file.
-RUN mkdir -p /usr/bin /var/lib && ln -s /bin/env /usr/bin/env
-
-COPY --from=build-env /lib/ld-musl-x86_64.so.1 /lib/ld-musl-x86_64.so.1
 COPY --from=build-env /go/bin/notary-signer /usr/bin/notary-signer
 COPY --from=build-env /go/bin/migrate /usr/bin/migrate
 COPY --from=build-env /go/src/github.com/docker/notary/migrations/ /var/lib/notary/migrations

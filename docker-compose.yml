@@ -2,11 +2,8 @@ version: "3.1"
 services:
   server:
     image: dockersecurity/dc17-notary:server-latest
-    deploy:
-      replicas: 1
     networks:
-      - mdb
-      - sig
+      - dev
     ports:
       - "4443:4443"
     entrypoint: /usr/bin/env sh
@@ -20,15 +17,9 @@ services:
       - notary-server.crt
       - notary-server.key
   signer:
-    build:
-      context: .
-      dockerfile: signer.Dockerfile
     image: dockersecurity/dc17-notary:signer-latest
-    deploy:
-      replicas: 1
     networks:
-      mdb:
-      sig:
+      dev:
         aliases:
           - notarysigner
     entrypoint: /usr/bin/env sh
@@ -42,12 +33,10 @@ services:
       - notary-signer.key
   mysql:
     image: mariadb:10.1.10
-    deploy:
-      replicas: 1
     networks:
-      - mdb
+      - dev
     volumes:
-      - /Users/cyli/go/src/github.com/docker/notary/notarysql/mysql-initdb.d:/docker-entrypoint-initdb.d
+      - ./notarysql/mysql-initdb.d:/docker-entrypoint-initdb.d
       - notary_data:/var/lib/mysql
     environment:
       - TERM=dumb
@@ -55,24 +44,21 @@ services:
     command: mysqld --innodb_file_per_table
 secrets:
   signer-config.json:
-      file: /Users/cyli/go/src/github.com/docker/notary/fixtures/signer-config.json
+      file: fixtures/signer-config.json
   server-config.json:
-      file: /Users/cyli/go/src/github.com/docker/notary/fixtures/server-config.json
+      file: fixtures/server-config.json
   root-ca.crt:
-      file: /Users/cyli/go/src/github.com/docker/notary/fixtures/root-ca.crt
+      file: fixtures/root-ca.crt
   notary-server.crt:
-      file: /Users/cyli/go/src/github.com/docker/notary/fixtures/notary-server.crt
+      file: fixtures/notary-server.crt
   notary-server.key:
-      file: /Users/cyli/go/src/github.com/docker/notary/fixtures/notary-server.key
+      file: fixtures/notary-server.key
   notary-signer.crt:
-      file: /Users/cyli/go/src/github.com/docker/notary/fixtures/notary-signer.crt
+      file: fixtures/notary-signer.crt
   notary-signer.key:
-      file: /Users/cyli/go/src/github.com/docker/notary/fixtures/notary-signer.key
+      file: fixtures/notary-signer.key
 networks:
-  mdb:
-    external: false
-  sig:
-    external: false
+  dev:
 volumes:
   notary_data:
     external: false

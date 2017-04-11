@@ -5,6 +5,7 @@ services:
     image: dockersecurity/dc17-notary:server-latest
     deploy:
       replicas: 1
+    read_only: true
     networks:
       - mdb
       - sig
@@ -91,7 +92,9 @@ secrets:
   notary-signer.key:
       external: true
 volumes:
-  notary_data:
+  notary_metadata:
+    external: false
+  notary_key_data:
     external: false
 networks:
   sdb:

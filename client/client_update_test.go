@@ -14,6 +14,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/Sirupsen/logrus"
 	"github.com/docker/go/canonical/json"
 	"github.com/docker/notary"
 	"github.com/docker/notary/passphrase"
@@ -101,6 +102,7 @@ func (u *unwritableStore) Set(role string, serverMeta []byte) error {
 // Update can succeed even if we cannot write any metadata to the repo (assuming
 // no data in the repo)
 func TestUpdateSucceedsEvenIfCannotWriteNewRepo(t *testing.T) {
+	logrus.SetLevel(logrus.DebugLevel)
 	if testing.Short() {
 		t.Skip("skipping test in short mode")
 	}

@@ -868,6 +868,9 @@ func (tr *Repo) UpdateSnapshot(role data.RoleName, s *data.Signed) error {
 	if err != nil {
 		return err
 	}
+	if role == data.RoleName("targets/a") {
+		fmt.Println("Updating snapshot with targets/a\n", string(jsonData))
+	}
 	meta, err := data.NewFileMeta(bytes.NewReader(jsonData), data.NotaryDefaultHashes...)
 	if err != nil {
 		return err

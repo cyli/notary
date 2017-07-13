@@ -5,6 +5,7 @@ import (
 	"crypto/sha256"
 	"crypto/sha512"
 	"crypto/subtle"
+	"encoding/base64"
 	"encoding/hex"
 	"fmt"
 	"hash"
@@ -220,12 +221,14 @@ func CheckHashes(payload []byte, name string, hashes Hashes) error {
 		case notary.SHA256:
 			checksum := sha256.Sum256(payload)
 			if subtle.ConstantTimeCompare(checksum[:], v) == 0 {
+				logrus.Errorf("expected: %s, got %s", base64.StdEncoding.EncodeToString(v), base64.StdEncoding.EncodeToString(checksum[:]))
 				return ErrMismatchedChecksum{alg: notary.SHA256, name: name, expected: hex.EncodeToString(v)}
 			}
 			cnt++
 		case notary.SHA512:
 			checksum := sha512.Sum512(payload)
 			if subtle.ConstantTimeCompare(checksum[:], v) == 0 {
+				logrus.Errorf("expected: %s, got %s", base64.StdEncoding.EncodeToString(v), base64.StdEncoding.EncodeToString(checksum[:]))
 				return ErrMismatchedChecksum{alg: notary.SHA512, name: name, expected: hex.EncodeToString(v)}
 			}
 			cnt++

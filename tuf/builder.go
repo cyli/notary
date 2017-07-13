@@ -501,6 +501,7 @@ func (rb *repoBuilder) loadTimestamp(content []byte, minVersion int, allowExpire
 
 func (rb *repoBuilder) loadSnapshot(content []byte, minVersion int, allowExpired bool) error {
 	roleName := data.CanonicalSnapshotRole
+	fmt.Println("snapshot", "\n", string(content))
 
 	snapshotRole, err := rb.repo.Root.BuildBaseRole(roleName)
 	if err != nil { // this should never happen, since it's already been validated
@@ -544,7 +545,6 @@ func (rb *repoBuilder) loadSnapshot(content []byte, minVersion int, allowExpired
 
 func (rb *repoBuilder) loadTargets(content []byte, minVersion int, allowExpired bool) error {
 	roleName := data.CanonicalTargetsRole
-
 	targetsRole, err := rb.repo.Root.BuildBaseRole(roleName)
 	if err != nil { // this should never happen, since it's already been validated
 		return err
@@ -580,6 +580,8 @@ func (rb *repoBuilder) loadDelegation(roleName data.RoleName, content []byte, mi
 	if err != nil {
 		return err
 	}
+
+	fmt.Println("builder loading", roleName, "\n", string(content))
 
 	// bytesToSigned checks checksum
 	signedObj, err := rb.bytesToSigned(content, roleName, false)

@@ -27,10 +27,12 @@ import re
 import shutil
 import subprocess
 import tarfile
+from getpass import getpass
+from sys import version_info
 from tempfile import mkdtemp
 from time import sleep, time
-import urllib
-from urlparse import urljoin
+from urllib.request import URLopener
+from urllib.parse import urljoin
 
 # Configuration for testing
 
@@ -42,12 +44,12 @@ DOCKERS = {}
 
 # delete any of these if you want to specify the docker binaries yourself
 DOWNLOAD_DOCKERS = {
-    "1.10": ("https://get.docker.com", "docker-1.10.3"),
-    "1.11": ("https://get.docker.com", "docker-1.11.2"),
-    "1.12": ("https://get.docker.com", "docker-1.12.1"),
+    "17.12.0": ("https://download.docker.com/", "docker-17.12.0-ce"),
+    "17.09.1": ("https://download.docker.com/", "docker-17.09.1-ce"),
+    "17.06.2": ("https://download.docker.com/", "docker-17.06.2-ce"),
 }
 
-NOTARY_VERSION = "0.4.1"     # only version that will work with docker < 1.13
+NOTARY_VERSION = b"0.5.0"
 NOTARY_BINARY = "bin/notary"
 
 # please replace with private registry if you want to test against a private
@@ -87,6 +89,11 @@ else:
 
 DEBUG = " -D" if os.getenv('DEBUG') else ""
 
+_NOTARY_CREDS = {
+    "username": os.getenv("NOTARY_SERVER_USERNAME"),
+    "password": os.getenv("NOTARY_SERVER_PASSPHRASE"),
+}
+
 # ---- setup ----
 
 
@@ -94,15 +101,19 @@ def download_docker(download_dir="/tmp"):
     """
     Downloads the relevant docker binaries and sets the docker values
     """
+    # windows not currently supported
     system = platform.system()
-    architecture = "x86_64"
-    if platform.architecture()[0] != "64bit":
-        architecture = "i386"
+    if system == "Darwin":
+        system = "mac"
+    else:
+        system = "linux"
 
-    downloadfile = urllib.URLopener()
+    architecture = "x86_64"
+
+    downloadfile = URLopener()
     for version in DOWNLOAD_DOCKERS:
         domain, binary = DOWNLOAD_DOCKERS[version]
-        tarfilename = os.path.join(download_dir, binary+".tgz")
+        tarfilename = os.path.join(download_dir, binary + ".tgz")
         extractdir = os.path.join(download_dir, binary)
 
         DOCKERS[version] = os.path.join(extractdir, "docker")
@@ -116,12 +127,8 @@ def download_docker(download_dir="/tmp"):
 
         if not os.path.isfile(tarfilename):
             url = urljoin(
-                # as of 1.10 docker downloads are tar-ed due to potentially
-                # containing containerd etc.
-                # note that for windows (which we don't currently support),
-                # it's a .zip file
                 domain, "/".join(
-                    ["builds", system, architecture, binary+".tgz"]))
+                    [system, "static", "stable", architecture, binary + ".tgz"]))
 
             print("Downloading", url)
             downloadfile.retrieve(url, tarfilename)
@@ -135,7 +142,7 @@ def download_docker(download_dir="/tmp"):
                 fname = os.path.join(extractdir, os.path.basename(member.name))
                 with open(fname, 'wb') as writefile:
                     writefile.write(archfile.read())
-                os.chmod(fname, 0755)
+                os.chmod(fname, 755)
 
         if not os.path.isfile(DOCKERS[version]):
             raise Exception(
@@ -151,14 +158,14 @@ def verify_notary():
         raise Exception("notary client does not exist: " + NOTARY_BINARY)
 
     output = subprocess.check_output([NOTARY_BINARY, "version"]).strip()
-    lines = output.split("\n")
+    lines = output.split(b"\n")
     if len(lines) != 3:
         print(output)
         raise Exception("notary version output invalid")
 
     if lines[1].split()[-1] > NOTARY_VERSION:
         print(output)
-        raise Exception("notary version too high: must be <= " + NOTARY_VERSION)
+        raise Exception("notary version too high: must be <= " + NOTARY_VERSION.decode("utf-8"))
 
 
 def setup():
@@ -201,6 +208,7 @@ def setup():
             shutil.copyfile("fixtures/root-ca.crt", cert)
 
 # ---- tests ----
+
 
 _TEMPDIR = mkdtemp(prefix="docker-version-test")
 _TEMP_DOCKER_CONFIG_DIR = os.path.join(_TEMPDIR, "docker-config-dir")
@@ -266,7 +274,7 @@ def run_cmd(cmd, fileoutput, input=None):
     Takes a string command, runs it, and returns the output even if it fails.
     """
     print("$ " + cmd)
-    fileoutput.write("$ {cmd}\n".format(cmd=cmd))
+    fileoutput.write("$ {cmd}\n".format(cmd=cmd).encode())
 
     if input is not None:
         process = subprocess.Popen(
@@ -278,17 +286,19 @@ def run_cmd(cmd, fileoutput, input=None):
     else:
         process = subprocess.Popen(cmd.split(), env=_ENV, stderr=subprocess.STDOUT,
                                    stdout=subprocess.PIPE)
-    output = ""
+    output = b""
     while process.poll() is None:
         line = process.stdout.readline()
-        print(line.strip("\n"))
+        if not line.strip() or b"Enter username:" in line or b"Enter password:" in line:
+            continue
+        print(line.strip(b"\n").decode("utf-8"))
         fileoutput.write(line)
-        if "level=debug" not in line:
+        if b"level=debug" not in line:
             output += line
 
     retcode = process.poll()
     print()
-    fileoutput.write("\n")
+    fileoutput.write(b"\n")
 
     if retcode:
         raise subprocess.CalledProcessError(retcode, cmd, output=output)
@@ -314,8 +324,9 @@ def assert_equality(actual, expected):
     """
     Assert equality, print nice message
     """
-    assert actual == expected, "\nGot     : {0}\nExpected: {1}".format(
-        repr(actual), repr(expected))
+    if actual != expected:
+        raise Exception("\nGot     : {0}\nExpected: {1}".format(
+            repr(actual), repr(expected)))
 
 
 def pull(fout, docker_version, image, tag, expected_sha):
@@ -329,7 +340,7 @@ def pull(fout, docker_version, image, tag, expected_sha):
         "{docker}{debug} pull {image}:{tag}".format(
             docker=DOCKERS[docker_version], image=image, tag=tag, debug=DEBUG),
         fout)
-    sha = _DIGEST_REGEX.search(output).group(1)
+    sha = _DIGEST_REGEX.search(output.decode("utf-8")).group(1)
     assert_equality(sha, expected_sha)
 
 
@@ -351,8 +362,8 @@ def push(fout, docker_version, image, tag):
         "{docker}{debug} push {image}:{tag}".format(
             docker=DOCKERS[docker_version], image=image, tag=tag, debug=DEBUG),
         fout)
-    sha = _DIGEST_REGEX.search(output).group(1)
-    size = _SIZE_REGEX.search(output).group(1)
+    sha = _DIGEST_REGEX.search(str(output)).group(1)
+    size = _SIZE_REGEX.search(str(output)).group(1)
 
     # sleep for 1s after pushing, just to let things propagate :)
     sleep(1)
@@ -369,12 +380,13 @@ def get_notary_usernamepass():
     """
     Gets the username password for the notary server
     """
-    username = os.getenv("NOTARY_SERVER_USERNAME")
-    passwd = os.getenv("NOTARY_SERVER_PASSPHRASE")
+    if not _NOTARY_CREDS["username"]:
+        _NOTARY_CREDS["username"] = input(TRUST_SERVER + " username: ")
+    if not _NOTARY_CREDS["password"]:
+        _NOTARY_CREDS["password"] = getpass(
+            "{0} password for {1}: ".format(TRUST_SERVER, _NOTARY_CREDS["username"]))
 
-    if username and passwd:
-        return username + "\n" + passwd + "\n"
-    return None
+    return _NOTARY_CREDS["username"].encode() + b"\n" + _NOTARY_CREDS["password"].encode() + b"\n"
 
 
 def notary_list(fout, repo):
@@ -387,9 +399,10 @@ def notary_list(fout, repo):
         "{notary}{debug} -d {trustdir} list {gun}".format(
             notary=NOTARY_CLIENT, trustdir=_TRUST_DIR, gun=repo, debug=DEBUG),
         fout, input=get_notary_usernamepass())
-    lines = output.strip().split("\n")
-    assert len(lines) >= 3, "not enough targets"
-    return [line.strip().split() for line in lines[2:]]
+    lines = output.strip().split(b"\n")
+    if len(lines) < 3:
+        raise Exception("not enough targets")
+    return [line.decode("utf-8").strip().split() for line in lines[2:]]
 
 
 def test_build(fout, image, docker_version):
@@ -403,15 +416,16 @@ def test_build(fout, image, docker_version):
         image=image, tag=docker_version)
     tempdir_dockerfile = os.path.join(_TEMPDIR, "Dockerfile")
     with open(tempdir_dockerfile, 'wb') as ftemp:
-        ftemp.write(dockerfile)
+        ftemp.write(dockerfile.encode())
 
     output = run_cmd(
         "{docker}{debug} build {context}".format(
             docker=DOCKERS[docker_version], context=_TEMPDIR, debug=DEBUG),
         fout)
 
-    build_result = _BUILD_REGEX.findall(output)
-    assert len(build_result) >= 0, "build did not succeed"
+    build_result = _BUILD_REGEX.findall(output.decode("utf-8"))
+    if len(build_result) < 0:
+        raise Exception("build did not succeed")
 
 
 def test_pull_a(fout, docker_version, image, expected_tags):
@@ -427,12 +441,13 @@ def test_pull_a(fout, docker_version, image, expected_tags):
     output = run_cmd(
         "{docker}{debug} pull -a {image}".format(
             docker=DOCKERS[docker_version], image=image, debug=DEBUG), fout)
-    pulled_tags = _PULL_A_REGEX.findall(output)
+    pulled_tags = _PULL_A_REGEX.findall(output.decode("utf-8"))
 
     assert_equality(len(pulled_tags), len(expected_tags))
-    for tag, info in expected_tags.iteritems():
+    for tag, info in expected_tags.items():
         found = [pulled for pulled in pulled_tags if pulled[0] == tag]
-        assert found
+        if not found:
+            raise Exception("pulled tag not found")
         assert_equality(found[0][1], info["sha"])
 
 
@@ -489,7 +504,8 @@ def test_run(fout, image, docker_version):
         "{docker}{debug} run -it --rm {image}:{tag} echo SUCCESS".format(
             docker=DOCKERS[docker_version], image=image, tag=docker_version,
             debug=DEBUG), fout)
-    assert "SUCCESS" in output, "run did not succeed"
+    if b"SUCCESS" not in output:
+        raise Exception("run did not succeed")
 
 
 def test_docker_version(docker_version, repo_name="", do_after_first_push=None):
@@ -520,13 +536,12 @@ def test_docker_version(docker_version, repo_name="", do_after_first_push=None):
 
     for ver in DOCKERS:
         if ver != docker_version:
-            # 1.8.x and 1.9.x will fail to push if the repo was created by
-            # a more recent docker, since the key format has changed, or if a
-            # snapshot rotation or delegation has occurred
+            # <17.10 will fail to push if the repo was created by a more recent
+            # docker, since the key format has changed to PKCS8
             can_fail = (
                 (do_after_first_push or
-                 re.compile(r"1\.[1-9][0-9](\.\d+)?$").search(docker_version)) and
-                re.compile(r"1\.[0-9](\.\d+)?$").search(ver))
+                 re.compile(r"17\.[1-9][0-9](\.\d+)?$").search(docker_version)) and
+                re.compile(r"17\.0[0-9](\.\d+)?$").search(ver))
 
             result[ver] = test_push(tempdir, ver, image, allow_push_failure=can_fail)
 
@@ -548,9 +563,10 @@ def test_docker_version(docker_version, repo_name="", do_after_first_push=None):
     with open(os.path.join(tempdir, "notary_list"), 'wb') as fout:
         targets = notary_list(fout, image)
         assert_equality(len(targets), len(expected_tags))
-        for tag, info in expected_tags.iteritems():
+        for tag, info in expected_tags.items():
             found = [target for target in targets if target[0] == tag]
-            assert found
+            if not found:
+                raise Exception("expected tag {0} not found".format(tag))
             assert_equality(
                 found[0][1:],
                 [info["sha"], info["size"], "targets"])
@@ -573,7 +589,7 @@ def test_docker_version(docker_version, repo_name="", do_after_first_push=None):
             else:
                 result[docker_version]["run"] = "success"
 
-    with open(os.path.join(tempdir, "result.json"), 'wb') as fout:
+    with open(os.path.join(tempdir, "result.json"), 'w') as fout:
         json.dump(result, fout, indent=2)
 
     return result
@@ -585,10 +601,6 @@ def rotate_to_server_snapshot(fout, image):
     """
     run_cmd(
         "{notary}{debug} -d {trustdir} key rotate {gun} snapshot -r".format(
-            notary=NOTARY_CLIENT, trustdir=_TRUST_DIR, gun=image, debug=DEBUG),
-        fout, input=get_notary_usernamepass())
-    run_cmd(
-        "{notary}{debug} -d {trustdir} publish {gun}".format(
             notary=NOTARY_CLIENT, trustdir=_TRUST_DIR, gun=image, debug=DEBUG),
         fout, input=get_notary_usernamepass())
 
@@ -629,5 +641,8 @@ def test_all_docker_versions():
 
 
 if __name__ == "__main__":
-    setup()
-    test_all_docker_versions()
+    if version_info[0] < 3 or version_info[1] < 6:
+        print("Must be using python >= 3.6")
+    else:
+        setup()
+        test_all_docker_versions()

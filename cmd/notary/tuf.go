@@ -29,6 +29,7 @@ import (
 	notaryclient "github.com/theupdateframework/notary/client"
 	"github.com/theupdateframework/notary/cryptoservice"
 	"github.com/theupdateframework/notary/passphrase"
+	"github.com/theupdateframework/notary/storage"
 	"github.com/theupdateframework/notary/trustmanager"
 	"github.com/theupdateframework/notary/trustpinning"
 	"github.com/theupdateframework/notary/tuf/data"
@@ -106,6 +107,12 @@ var cmdTUFDeleteTemplate = usageTemplate{
 	Use:   "delete [ GUN ]",
 	Short: "Deletes all content for a trusted collection",
 	Long:  "Deletes all local content for a trusted collection identified by the Globally Unique Name. Remote data can also be deleted with an additional flag.",
+}
+
+var cmdTUFInfoTemplate = usageTemplate{
+	Use:   "info [GUN]",
+	Short: "Displays root key information for a trusted collection",
+	Long:  "Displays root key information for a trusted collection",
 }
 
 type tufCommander struct {
@@ -190,6 +197,9 @@ func (t *tufCommander) AddToCommand(cmd *cobra.Command) {
 	cmdTUFDeleteGUN := cmdTUFDeleteTemplate.ToCommand(t.tufDeleteGUN)
 	cmdTUFDeleteGUN.Flags().BoolVar(&t.deleteRemote, "remote", false, "Delete remote data for GUN in addition to local cache")
 	cmd.AddCommand(cmdTUFDeleteGUN)
+
+	cmdTUFInfo := cmdTUFInfoTemplate.ToCommand(t.tufInfo)
+	cmd.AddCommand(cmdTUFInfo)
 }
 
 func (t *tufCommander) tufWitness(cmd *cobra.Command, args []string) error {
@@ -764,6 +774,56 @@ func (t *tufCommander) tufVerify(cmd *cobra.Command, args []string) error {
 	}
 
 	return feedback(t, payload)
+}
+
+func (t *tufCommander) tufInfo(cmd *cobra.Command, args []string) error {
+	config, err := t.configGetter()
+	if err != nil {
+		return err
+	}
+	gun := data.GUN(args[0])
+	url := getRemoteTrustServer(config)
+
+	rt, err := getTransport(config, gun, readOnly)
+	if err != nil {
+		return err
+	}
+
+	remoteServer, err := storage.NewNotaryServerStore(url, gun, rt)
+	if err != nil {
+		return err
+	}
+
+	trustPin, err := getTrustPinning(config)
+	if err != nil {
+		return err
+	}
+
+	repo, _, err := notaryclient.LoadTUFRepo(notaryclient.TUFLoadOptions{
+		GUN:           gun,
+		TrustPinning:  trustPin,
+		CryptoService: nil,
+		Cache:         storage.NewMemoryStore(nil),
+		RemoteStore:   remoteServer,
+	})
+	if err != nil {
+		return err
+	}
+
+	cmd.Println("Root keys for " + gun.String() + ":")
+	for _, keyID := range repo.Root.Signed.Roles[data.CanonicalRootRole].KeyIDs {
+		key, ok := repo.Root.Signed.Keys[keyID]
+		if !ok {
+			continue
+		}
+		canonical, err := tufutils.CanonicalKeyID(key)
+		if err != nil {
+			continue
+		}
+		cmd.Println("\tKeyID       : " + keyID)
+		cmd.Println("\t(canonical) : " + canonical)
+	}
+	return nil
 }
 
 type passwordStore struct {
